@@ -18,7 +18,9 @@ import urllib.parse
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.path.join(BASE, "work")
-OUT = os.path.join(BASE, "out")
+# OUT en la raíz del repo (no en scripts/): el workflow busca out/video.mp4
+# y out/report.json desde la raíz.
+OUT = os.path.join(os.path.dirname(BASE), "out")
 IMG_DIR = os.path.join(WORK, "img")
 
 UA = {"User-Agent": "VeltoraVideoTest/1.0 (prueba sin fines comerciales)"}
