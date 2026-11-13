@@ -1,0 +1,50 @@
+{
+  "fases": {
+    "guion": {
+      "segundos": 0.9
+    },
+    "imagenes": {
+      "segundos": 1.6
+    },
+    "voz": {
+      "segundos": 14.5
+    },
+    "render": {
+      "segundos": 22.3
+    }
+  },
+  "exito": true,
+  "tema": "Grandmaster Chime Patek Philippe",
+  "duracion_objetivo_s": 35.0,
+  "guion_llamada1_palabras": 50,
+  "guion_llamada2_palabras": 42,
+  "guion_fuente": "pollinations-2-llamadas",
+  "guion_palabras": 92,
+  "guion_clips": 5,
+  "imagenes_ok": 5,
+  "voz_modelo": "int8",
+  "voz_lang": "es",
+  "voz_duracion_s": 38.24,
+  "clip_duraciones_s": [
+    6.38,
+    7.13,
+    8.92,
+    12.4,
+    3.41
+  ],
+  "video": {
+    "duracion_s": 38.24,
+    "mb": 3.39,
+    "width": 720,
+    "height": 1280,
+    "video_codec": "h264",
+    "tiene_audio": true,
+    "audio_codec": "aac"
+  },
+  "tiempo_total_s": 39.3,
+  "workflow": {
+    "run_id": "43514610406",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43514610406",
+    "tiempo_wall_s": 87.2
+  }
+}
