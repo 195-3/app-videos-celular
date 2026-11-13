@@ -1,13 +1,13 @@
 {
   "fases": {
     "guion": {
-      "segundos": 0.9
+      "segundos": 0.7
     },
     "imagenes": {
-      "segundos": 1.6
+      "segundos": 1.2
     },
     "voz": {
-      "segundos": 14.5
+      "segundos": 14.2
     },
     "render": {
       "segundos": 22.3
@@ -41,10 +41,10 @@
     "tiene_audio": true,
     "audio_codec": "aac"
   },
-  "tiempo_total_s": 39.3,
+  "tiempo_total_s": 38.4,
   "workflow": {
-    "run_id": "43514610406",
-    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43514610406",
-    "tiempo_wall_s": 87.2
+    "run_id": "43519624755",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43519624755",
+    "tiempo_wall_s": 81.2
   }
 }
