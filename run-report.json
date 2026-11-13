@@ -1,48 +1,48 @@
 {
   "fases": {
     "guion": {
-      "segundos": 20.7
+      "segundos": 12.7
     },
     "imagenes": {
-      "segundos": 1.6
+      "segundos": 1.9
     },
     "voz": {
-      "segundos": 18.2
+      "segundos": 15.5
     },
     "render": {
-      "segundos": 28.8
+      "segundos": 25.9
     }
   },
   "exito": true,
-  "tema": "Astron",
+  "tema": "Seiko Astron ",
   "duracion_objetivo_s": 35.0,
   "guion_fuente": "fallback",
-  "guion_palabras": 111,
+  "guion_palabras": 103,
   "guion_clips": 5,
   "imagenes_ok": 5,
   "voz_modelo": "int8",
   "voz_lang": "es",
-  "voz_duracion_s": 36.39,
+  "voz_duracion_s": 35.11,
   "clip_duraciones_s": [
-    6.26,
-    8.43,
-    6.83,
-    7.97,
-    6.89
+    4.7,
+    6.66,
+    7.91,
+    8.09,
+    7.74
   ],
   "video": {
-    "duracion_s": 36.39,
-    "mb": 3.16,
+    "duracion_s": 35.1,
+    "mb": 3.13,
     "width": 720,
     "height": 1280,
     "video_codec": "h264",
     "tiene_audio": true,
     "audio_codec": "aac"
   },
-  "tiempo_total_s": 69.4,
+  "tiempo_total_s": 56.1,
   "workflow": {
-    "run_id": "43520317756",
-    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43520317756",
-    "tiempo_wall_s": 107.4
+    "run_id": "43523122748",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43523122748",
+    "tiempo_wall_s": 99.9
   }
 }
