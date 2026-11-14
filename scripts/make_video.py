@@ -668,12 +668,13 @@ def _texto_desde_vtt(ruta):
 
 
 def obtener_transcripcion_ytdlp(video_id, url):
-    """Subtítulos vía yt-dlp con cliente android/ios. El cliente web es
-    el que YouTube bloquea en IPs de nube (fallo real 14-nov-2026, run
-    #10: fetch y yt-dlp web bloqueados, video lxZFE68mu8k); los clientes
-    de la app casi nunca están bloqueados. Devuelve "" si no hay."""
+    """Subtítulos vía yt-dlp con varios clientes de la app. El cliente web
+    es el que YouTube bloquea en IPs de nube (fallo real 14-nov-2026,
+    runs #10 y #11: web, android e ios bloqueados desde Actions); tv y
+    web_embedded usan otros endpoints y suelen pasar cuando los demás no.
+    Devuelve "" si no hay."""
     url = url or f"https://www.youtube.com/watch?v={video_id}"
-    for cliente in ("android", "ios"):
+    for cliente in ("android", "ios", "tv", "web_embedded"):
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 base = os.path.join(tmp, "sub")
@@ -694,8 +695,10 @@ def obtener_transcripcion_ytdlp(video_id, url):
                     print(f"curar: subtítulos vía yt-dlp ({cliente})",
                           flush=True)
                     return texto
-                print(f"curar: subtítulos yt-dlp ({cliente}) insuficientes",
-                      flush=True)
+                err = (r.stderr or "").strip().splitlines()
+                print(f"curar: subtítulos yt-dlp ({cliente}) insuficientes "
+                      f"(rc={r.returncode}): "
+                      f"{err[-1][:160] if err else 'sin .vtt'}", flush=True)
         except Exception as e:
             print(f"curar: subtítulos yt-dlp ({cliente}) falló: {e}",
                   flush=True)
@@ -743,7 +746,7 @@ def obtener_metadatos_yt(video_id, url):
     YouTube para el título (sin llave). Los campos que no se consiguen
     quedan vacíos; no es un fallo del run."""
     meta = {"titulo": "", "descripcion": "", "vistas": None, "autor": ""}
-    for cliente in ("android", "ios", None):
+    for cliente in ("android", "ios", "tv", "web_embedded", None):
         args = ["yt-dlp", "--dump-json", "--no-download", "--no-warnings",
                 "--no-playlist"]
         if cliente:
