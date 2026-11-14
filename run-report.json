@@ -1,48 +1,95 @@
 {
   "fases": {
+    "investigacion": {
+      "segundos": 1.4
+    },
     "guion": {
-      "segundos": 12.7
+      "segundos": 88.1
     },
     "imagenes": {
-      "segundos": 1.9
+      "segundos": 1.8
     },
     "voz": {
-      "segundos": 15.5
+      "segundos": 15.4
+    },
+    "musica": {
+      "segundos": 0.2
     },
     "render": {
-      "segundos": 25.9
+      "segundos": 23.7
     }
   },
   "exito": true,
-  "tema": "Seiko Astron ",
+  "version": "fase2",
+  "tema": "Rolex Daytona Paul Newman parte 2",
   "duracion_objetivo_s": 35.0,
-  "guion_fuente": "fallback",
-  "guion_palabras": 103,
+  "formato": "vertical",
+  "dimensiones": "720x1280",
+  "clips_previstos": 5,
+  "palabras_objetivo": 77,
+  "musica_pedida": "si",
+  "investigacion": {
+    "tema": "Rolex Daytona Paul Newman parte 2",
+    "articulo_wiki": "Rolex Daytona",
+    "frases_wiki": 45,
+    "resultados_ddg": 10,
+    "numeros_confirmados": [
+      "1969",
+      "1972",
+      "2017",
+      "6239",
+      "6263",
+      "6265"
+    ],
+    "fuente_datos": "wikipedia-es",
+    "datos": "For part 1 of this series we showed you Paul Newman's personal Ref 6263 Cosmograph Daytona, A Paul Newman Rolex Daytona must be a Reference 6239, 6241, 6262, 6263, 6264 or 6265 watch, Joanne Woodard in 1972, In 1969, Paul Newman starred in the movie",
+    "chips": [
+      "For part 1 of this series we showed you Paul Newman's personal Ref 6263 Cosmograph Daytona",
+      "A Paul Newman Rolex Daytona must be a Reference 6239",
+      "6241, 6262, 6263",
+      "6264 or 6265 watch",
+      "Joanne Woodard in 1972",
+      "In 1969, Paul Newman starred in the movie"
+    ]
+  },
+  "guion_llamadas": [
+    38,
+    39
+  ],
+  "guion_fuente": "pollinations",
+  "guion_palabras": 85,
   "guion_clips": 5,
   "imagenes_ok": 5,
   "voz_modelo": "int8",
   "voz_lang": "es",
-  "voz_duracion_s": 35.11,
+  "voz_duracion_s": 39.84,
+  "musica": {
+    "titulo": "Lovely Piano Song",
+    "autor": "Kevin MacLeod",
+    "licencia": "CC0 1.0 Universal (dominio público)",
+    "volumen": 0.2,
+    "duracion_s": 39.84
+  },
   "clip_duraciones_s": [
-    4.7,
-    6.66,
-    7.91,
-    8.09,
-    7.74
+    12.17,
+    2.12,
+    2.34,
+    8.69,
+    14.51
   ],
   "video": {
-    "duracion_s": 35.1,
-    "mb": 3.13,
+    "duracion_s": 39.83,
+    "mb": 3.38,
     "width": 720,
     "height": 1280,
     "video_codec": "h264",
     "tiene_audio": true,
     "audio_codec": "aac"
   },
-  "tiempo_total_s": 56.1,
+  "tiempo_total_s": 130.4,
   "workflow": {
-    "run_id": "43523122748",
-    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43523122748",
-    "tiempo_wall_s": 99.9
+    "run_id": "43542998276",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43542998276",
+    "tiempo_wall_s": 169.5
   }
 }
