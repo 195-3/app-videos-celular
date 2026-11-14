@@ -1,95 +1,112 @@
 {
   "fases": {
-    "investigacion": {
-      "segundos": 1.4
+    "curar-fuente": {
+      "segundos": 7.0
+    },
+    "curar-analisis": {
+      "segundos": 1.9
     },
     "guion": {
-      "segundos": 88.1
+      "segundos": 267.0
     },
     "imagenes": {
-      "segundos": 1.8
+      "segundos": 2.6
     },
     "voz": {
-      "segundos": 15.4
+      "segundos": 20.1
     },
     "musica": {
-      "segundos": 0.2
+      "segundos": 0.1
     },
     "render": {
-      "segundos": 23.7
+      "segundos": 45.7
     }
   },
   "exito": true,
   "version": "fase2",
-  "tema": "Rolex Daytona Paul Newman parte 2",
-  "duracion_objetivo_s": 35.0,
-  "formato": "vertical",
-  "dimensiones": "720x1280",
-  "clips_previstos": 5,
-  "palabras_objetivo": 77,
+  "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
+  "modo": "curar",
+  "duracion_objetivo_s": 60.0,
+  "formato": "horizontal",
+  "dimensiones": "1920x1080",
+  "clips_previstos": 7,
+  "palabras_objetivo": 132,
   "musica_pedida": "si",
+  "variante": "mismo-tema",
+  "curar": {
+    "video_id": "lxZFE68mu8k",
+    "titulo": "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS",
+    "autor": "FULL TOP'S",
+    "vistas": null,
+    "transcripcion_chars": 3991,
+    "descripcion_chars": 0,
+    "gancho": "El video arranca con un flash de los relojes más",
+    "estructura": "Cada hora se presenta en orden descendente con close‑ups, números y la voz describiendo óxido, cámara, GPS o diseño de motor, manteniendo ritmo y ritmo visual constante.",
+    "cambio": "Añadir un toque de personalidad al narrador, mezclar humor o historias personales sobre relojes y evitar la saturación de datos técnicos para no abrumar al espectador.",
+    "tema": "Relojes de Alta Tecnología",
+    "cierre": "Al final se anima a suscribirse, comentar “Cuál es tu",
+    "fuente": "pollinations-v1",
+    "candidatos_tema": [
+      "Top 10 Increíbles Querrás Tener Ya TOPS",
+      "Relojes de Alta Tecnología"
+    ]
+  },
   "investigacion": {
-    "tema": "Rolex Daytona Paul Newman parte 2",
-    "articulo_wiki": "Rolex Daytona",
-    "frases_wiki": 45,
+    "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
+    "articulo_wiki": "Miley Cyrus",
+    "frases_wiki": 34,
     "resultados_ddg": 10,
-    "numeros_confirmados": [
-      "1969",
-      "1972",
-      "2017",
-      "6239",
-      "6263",
-      "6265"
-    ],
+    "numeros_confirmados": [],
     "fuente_datos": "wikipedia-es",
-    "datos": "For part 1 of this series we showed you Paul Newman's personal Ref 6263 Cosmograph Daytona, A Paul Newman Rolex Daytona must be a Reference 6239, 6241, 6262, 6263, 6264 or 6265 watch, Joanne Woodard in 1972, In 1969, Paul Newman starred in the movie",
+    "datos": "Posteriormente, la artista decidió fusionar sus inicios y aventurarse en el rock y el glam rock con Plastic Hearts (2020), Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS ¿ERES CURIOSO?, Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPSNo te olvides de dejar",
     "chips": [
-      "For part 1 of this series we showed you Paul Newman's personal Ref 6263 Cosmograph Daytona",
-      "A Paul Newman Rolex Daytona must be a Reference 6239",
-      "6241, 6262, 6263",
-      "6264 or 6265 watch",
-      "Joanne Woodard in 1972",
-      "In 1969, Paul Newman starred in the movie"
+      "Posteriormente, la artista decidió fusionar sus inicios y aventurarse en el rock y el glam rock con Plastic Hearts (2020)",
+      "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS ¿ERES CURIOSO?",
+      "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPSNo te olvides de dejar tu comentario con cual de todos los caso te ha parecido mas sorprendente",
+      "These are made from 1\" thick Poplar for the table tops"
     ]
   },
   "guion_llamadas": [
-    38,
-    39
+    44,
+    41,
+    44
   ],
   "guion_fuente": "pollinations",
-  "guion_palabras": 85,
-  "guion_clips": 5,
-  "imagenes_ok": 5,
+  "guion_palabras": 137,
+  "guion_clips": 7,
+  "imagenes_ok": 7,
   "voz_modelo": "int8",
   "voz_lang": "es",
-  "voz_duracion_s": 39.84,
+  "voz_duracion_s": 48.36,
   "musica": {
     "titulo": "Lovely Piano Song",
     "autor": "Kevin MacLeod",
     "licencia": "CC0 1.0 Universal (dominio público)",
     "volumen": 0.2,
-    "duracion_s": 39.84
+    "duracion_s": 48.36
   },
   "clip_duraciones_s": [
-    12.17,
-    2.12,
-    2.34,
-    8.69,
-    14.51
+    3.6,
+    6.61,
+    4.15,
+    8.35,
+    6.79,
+    8.95,
+    9.91
   ],
   "video": {
-    "duracion_s": 39.83,
-    "mb": 3.38,
-    "width": 720,
-    "height": 1280,
+    "duracion_s": 48.36,
+    "mb": 8.27,
+    "width": 1920,
+    "height": 1080,
     "video_codec": "h264",
     "tiene_audio": true,
     "audio_codec": "aac"
   },
-  "tiempo_total_s": 130.4,
+  "tiempo_total_s": 344.5,
   "workflow": {
-    "run_id": "43542998276",
-    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43542998276",
-    "tiempo_wall_s": 169.5
+    "run_id": "43619157471",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43619157471",
+    "tiempo_wall_s": 379.5
   }
 }
