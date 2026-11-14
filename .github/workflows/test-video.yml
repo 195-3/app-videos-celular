@@ -34,10 +34,10 @@ on:
         description: "Modo curar + otro-tema: tema del video nuevo"
         required: false
         default: ""
-        transcripcion_pegada:
-        description: "Modo curar: transcripción pegada del video (opcional)"
-        required: false
-        default: ""
+      transcripcion_pegada:
+          description: "Modo curar: transcripción pegada del video (opcional)"
+          required: false
+          default: ""
       duracion:
         description: "Duración objetivo en segundos (30, 35, 45 o 60)"
         required: false
