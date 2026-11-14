@@ -1,6 +1,8 @@
 name: test-video
-# PRUEBA MÍNIMA. Genera un video vertical 30-45 s desde un tema y lo sube
-# como artifact. No hay frontal, ni cola, ni publicación automática.
+# Veltora Studio — fase 2.
+# Genera un video desde un tema (investigación automática en el script),
+# lo sube como artifact y lo publica en GitHub Pages para descargarlo
+# desde el teléfono. La página (page/) también se publica aquí.
 on:
   workflow_dispatch:
     inputs:
@@ -9,9 +11,25 @@ on:
         required: true
         default: "Grandmaster Chime Patek Philippe"
       duracion:
-        description: "Duración objetivo en segundos"
+        description: "Duración objetivo en segundos (30, 35, 45 o 60)"
         required: false
         default: "35"
+      formato:
+        description: "Formato (vertical: TikTok/Reels/Shorts; horizontal: YouTube)"
+        required: false
+        default: "vertical"
+        type: choice
+        options:
+          - vertical
+          - horizontal
+      musica:
+        description: "Música de fondo CC0 (Lovely Piano Song, Kevin MacLeod)"
+        required: false
+        default: "si"
+        type: choice
+        options:
+          - "si"
+          - "no"
 
 jobs:
   test-video:
@@ -52,7 +70,7 @@ jobs:
           pip install -q kokoro-onnx soundfile requests numpy
 
       - name: Generar video
-        run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}"
+        run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}" --formato "${{ inputs.formato }}" --musica "${{ inputs.musica }}"
 
       - name: Verificar MP4
         run: |
@@ -64,7 +82,7 @@ jobs:
       - name: Subir MP4 como artifact
         uses: actions/upload-artifact@v4
         with:
-          name: video-35s
+          name: video-${{ inputs.formato }}-${{ inputs.duracion }}s
           path: out/video.mp4
           retention-days: 30
 
@@ -89,6 +107,13 @@ jobs:
           git add run-report.json
           git commit -m "run-report: test video ${{ github.run_id }}" || echo "sin cambios"
           git push
+
+      - name: Publicar video y página en GitHub Pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DUR=$(python3 -c "import json; print(json.load(open('out/report.json'))['video']['duracion_s'])")
+          bash scripts/publish_pages.sh out/video.mp4 "${{ github.run_id }}" "${{ inputs.tema }}" "${{ inputs.formato }}" "$DUR"
 
       - name: Marcar fin
         run: |
