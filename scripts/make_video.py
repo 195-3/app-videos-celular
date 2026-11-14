@@ -39,6 +39,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -644,10 +645,69 @@ def _limpiar_transcripcion(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-def obtener_transcripcion(video_id):
+def _texto_desde_vtt(ruta):
+    """Texto plano de un .vtt de subtítulos: quita cabecera, tiempos,
+    etiquetas y líneas repetidas (los automáticos repiten cada frase)."""
+    try:
+        with open(ruta, encoding="utf-8", errors="replace") as f:
+            lineas = f.read().splitlines()
+    except OSError:
+        return ""
+    frases, vistas = [], set()
+    for ln in lineas:
+        ln = ln.strip()
+        if (not ln or ln.startswith("WEBVTT") or "-->" in ln or ln.isdigit()
+                or ln.startswith("Kind:") or ln.startswith("Language:")):
+            continue
+        ln = re.sub(r"<[^>]+>", " ", ln)
+        ln = re.sub(r"\s+", " ", ln).strip()
+        if ln and ln not in vistas:
+            vistas.add(ln)
+            frases.append(ln)
+    return " ".join(frases)
+
+
+def obtener_transcripcion_ytdlp(video_id, url):
+    """Subtítulos vía yt-dlp con cliente android/ios. El cliente web es
+    el que YouTube bloquea en IPs de nube (fallo real 14-nov-2026, run
+    #10: fetch y yt-dlp web bloqueados, video lxZFE68mu8k); los clientes
+    de la app casi nunca están bloqueados. Devuelve "" si no hay."""
+    url = url or f"https://www.youtube.com/watch?v={video_id}"
+    for cliente in ("android", "ios"):
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                base = os.path.join(tmp, "sub")
+                r = subprocess.run(
+                    ["yt-dlp", "--write-auto-subs", "--write-subs",
+                     "--sub-langs", "es.*,en.*", "--sub-format", "vtt",
+                     "--skip-download", "--no-warnings", "--no-playlist",
+                     "--extractor-args", f"youtube:player_client={cliente}",
+                     "-o", base, url],
+                    capture_output=True, text=True, timeout=120)
+                textos = []
+                for nombre in sorted(os.listdir(tmp)):
+                    if nombre.endswith(".vtt"):
+                        textos.append(_texto_desde_vtt(
+                            os.path.join(tmp, nombre)))
+                texto = " ".join(t for t in textos if t)
+                if len(texto.strip()) >= 200:
+                    print(f"curar: subtítulos vía yt-dlp ({cliente})",
+                          flush=True)
+                    return texto
+                print(f"curar: subtítulos yt-dlp ({cliente}) insuficientes",
+                      flush=True)
+        except Exception as e:
+            print(f"curar: subtítulos yt-dlp ({cliente}) falló: {e}",
+                  flush=True)
+    return ""
+
+
+def obtener_transcripcion(video_id, url=None):
     """Transcripción del video (español o inglés). youtube-transcript-api
     tiene dos APIs según la versión: 1.x (fetch) y 0.6.x (get_transcript).
-    Se prueban ambas. Sin transcripción no hay análisis del contenido."""
+    Se prueban ambas; si YouTube bloquea la IP, último intento con los
+    subtítulos de yt-dlp (cliente android/ios). Sin transcripción no hay
+    análisis del contenido."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError as e:
@@ -669,29 +729,40 @@ def obtener_transcripcion(video_id):
         errores.append("get_transcript: transcripción demasiado corta")
     except Exception as e:
         errores.append(f"get_transcript: {e}")
+    texto = obtener_transcripcion_ytdlp(video_id, url)
+    if texto:
+        return texto
+    errores.append("yt-dlp android/ios: sin subtítulos suficientes")
     raise RuntimeError("sin transcripción del video (" + "; ".join(errores) + ")")
 
 
 def obtener_metadatos_yt(video_id, url):
-    """Título, descripción y vistas del video. Primero yt-dlp (sin llave);
-    si falla, oEmbed de YouTube para el título (sin llave). Los campos
-    que no se consiguen quedan vacíos; no es un fallo del run."""
+    """Título, descripción y vistas del video. yt-dlp con cliente
+    android/ios primero (el cliente web es el que YouTube bloquea en IPs
+    de nube: fallo real 14-nov-2026, run #10); si todo falla, oEmbed de
+    YouTube para el título (sin llave). Los campos que no se consiguen
+    quedan vacíos; no es un fallo del run."""
     meta = {"titulo": "", "descripcion": "", "vistas": None, "autor": ""}
-    try:
-        r = subprocess.run(
-            ["yt-dlp", "--dump-json", "--no-download", "--no-warnings",
-             "--no-playlist", url],
-            capture_output=True, text=True, timeout=60)
-        if r.returncode == 0 and r.stdout.strip():
-            d = json.loads(r.stdout)
-            meta["titulo"] = d.get("title", "") or ""
-            meta["descripcion"] = d.get("description", "") or ""
-            meta["vistas"] = d.get("view_count")
-            meta["autor"] = d.get("uploader", "") or ""
-            return meta
-        print(f"curar: yt-dlp falló (rc={r.returncode}), pruebo oEmbed", flush=True)
-    except Exception as e:
-        print(f"curar: yt-dlp falló ({e}), pruebo oEmbed", flush=True)
+    for cliente in ("android", "ios", None):
+        args = ["yt-dlp", "--dump-json", "--no-download", "--no-warnings",
+                "--no-playlist"]
+        if cliente:
+            args += ["--extractor-args", f"youtube:player_client={cliente}"]
+        args.append(url)
+        try:
+            r = subprocess.run(args, capture_output=True, text=True, timeout=60)
+            if r.returncode == 0 and r.stdout.strip():
+                d = json.loads(r.stdout)
+                meta["titulo"] = d.get("title", "") or ""
+                meta["descripcion"] = d.get("description", "") or ""
+                meta["vistas"] = d.get("view_count")
+                meta["autor"] = d.get("uploader", "") or ""
+                return meta
+            print(f"curar: yt-dlp ({cliente or 'web'}) falló "
+                  f"(rc={r.returncode}), pruebo siguiente", flush=True)
+        except Exception as e:
+            print(f"curar: yt-dlp ({cliente or 'web'}) falló ({e}), "
+                  f"pruebo siguiente", flush=True)
     try:
         status, body = http_get(
             "https://www.youtube.com/oembed?url="
@@ -714,7 +785,8 @@ def curar_fuente(video_url):
     meta = obtener_metadatos_yt(video_id, video_url)
     transcripcion = ""
     try:
-        transcripcion = _limpiar_transcripcion(obtener_transcripcion(video_id))
+        transcripcion = _limpiar_transcripcion(
+            obtener_transcripcion(video_id, video_url))
     except Exception as e:
         print(f"curar: {e}", flush=True)
     texto_util = (transcripcion + " " + meta.get("descripcion", "")).strip()
