@@ -65,6 +65,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+            actions: read
     steps:
       - name: Marcar inicio
         run: |
