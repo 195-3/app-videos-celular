@@ -170,6 +170,7 @@ async function api(path, method, body) {
   if (!token) throw new Error("Falta el token: configúralo arriba.");
   const r = await fetch(API + path, {
     method: method || "GET",
+    cache: "no-store",
     headers: { "Authorization": "Bearer " + token,
                "Accept": "application/vnd.github+json",
                "Content-Type": "application/json" },
