@@ -7,6 +7,10 @@ voz Kokoro Santa em_santa -> render FFmpeg con subtítulos quemados.
 Formatos: vertical 9:16 (720x1280, TikTok/Reels/Shorts) y horizontal 16:9
 (1920x1080, YouTube largo). Duración objetivo: 30/35/45 s (5 clips) o 60 s
 (7 clips). La duración manda el número de palabras del guion (~2,6/s).
+Modo curar (fase 3, 14-nov-2026): --modo curar --video-url <enlace YouTube>
+analiza el video viral (transcripción + metadatos, sin llave) y genera un
+guion nuevo con su fórmula, sin copiarlo. Variantes: mismo tema cambiando
+cosas, o la misma fórmula con otro tema (--tema-nuevo).
 Reglas heredadas y verificadas (13-nov-2026):
 - Pollinations texto anónimo: 1 llamada de ~110 palabras da HTTP 400
   output_token_limit_exceeded; llamadas cortas (~50 palabras) con
@@ -341,7 +345,8 @@ def _frases_con_datos(texto, claves=(), distintivas=()):
     return [f for _, f in buenas]
 
 
-def _chips_de_frases(frases, confirmados, distintivas, claves):
+def _chips_de_frases(frases, confirmados, distintivas, claves,
+                     exigir_confirmado=True):
     """Convierte frases en fragmentos cortos con cifras, estilo lista de
     datos ("desde 1963, cuatro generaciones; segunda serie 1988").
     El modelo compone el guion con sus palabras; con frases completas
@@ -358,7 +363,13 @@ def _chips_de_frases(frases, confirmados, distintivas, claves):
     ("...Nautilus, from the 1976 steel 3700 Jumbo..."). Sin la segunda
     condición, un año no confirmado ("En marzo de 1877") pasaba como
     dato verificado; sin la primera, un chip de otro reloj con un número
-    confirmado ("Ingenieur... 1976") se colaba en el guion."""
+    confirmado ("Ingenieur... 1976") se colaba en el guion.
+    `exigir_confirmado=False` (solo artículo dedicado del modelo): el
+    artículo mismo es la fuente verificada; exigir además un número
+    confirmado en DDG dejaba fuera modelos como el GMT Master II, donde
+    solo se confirma el calibre (3285) y salía 1 chip (fallo 14-nov-2026).
+    La protección Nautilus sigue: el artículo tiene que ser el del modelo
+    (puntos >= 10), no uno tangencial."""
     refs = distintivas if distintivas else claves
     chips = []
     for f in frases:
@@ -383,9 +394,11 @@ def _chips_de_frases(frases, confirmados, distintivas, claves):
                 continue
             if re.match(r"^(que|y|cuando|donde|como|para|pero)\s", seg, re.I):
                 continue
+            if re.search(r"\d+\s*(views|likes|loves|shares|comments|followers|suscriptores|seguidores)", seg, re.I):
+                continue  # contadores de interacción, no datos del reloj
             if not re.search(r"\d", seg):
                 continue
-            if confirmados and not (_numeros(seg) & set(confirmados)):
+            if exigir_confirmado and confirmados and not (_numeros(seg) & set(confirmados)):
                 continue
             if seg not in chips:
                 chips.append(seg)
@@ -396,8 +409,9 @@ def _norm_num(s):
     """Normaliza un número para compararlo entre fuentes: la coma decimal
     española ("17,8") y el punto inglés ("17.8") son el mismo número, y
     los separadores de miles ("17,752,500" / "17.752.500") se quitan.
-    Sin esto, el 17,8 de Wikipedia nunca confirmaba el 17.8 de DDG."""
-    s = s.replace(" ", "").replace("\u00a0", "")
+    Sin esto, el 17,8 de Wikipedia nunca confirmaba el 17.8 de DDG.
+    El punto final de frase ("50.º") no es parte del número."""
+    s = s.replace(" ", "").replace("\u00a0", "").rstrip(".,")
     if re.fullmatch(r"\d+,\d{1,2}", s):  # coma decimal: 17,8 -> 17.8
         return s.replace(",", ".")
     if "," in s:  # miles con coma: 17,752,500 -> 17752500
@@ -554,11 +568,13 @@ def investigar(tema):
     # Datos como fragmentos cortos con cifras (no frases completas: el
     # modelo las copiaba). Cada chip pasa el filtro de validez: número
     # confirmado en ambas fuentes, o mención de una palabra distintiva.
-    # Si de Wikipedia no salen al menos 2 chips válidos, segunda vía:
-    # frases con datos de los snippets de DDG (suelen ser del modelo
-    # exacto: para el Nautilus, DDG trae 1976 y Genta).
+    # Artículo dedicado del modelo (puntos >= 10): la exigencia del número
+    # confirmado no aplica a sus frases (ver _chips_de_frases); a los
+    # chips de DDG sí se les exige siempre.
+    articulo_dedicado = (puntos >= 10)
     frases = wiki_frases[:12]
-    chips = _chips_de_frases(frases, confirmados, distintivas, claves)
+    chips = _chips_de_frases(frases, confirmados, distintivas, claves,
+                             exigir_confirmado=not articulo_dedicado)
     if len(chips) < 2:
         # Los chips de DDG se SUMAN a los de Wikipedia (no los sustituyen):
         # un tema como el Nautilus solo tiene 1 chip válido en Wikipedia
@@ -594,6 +610,248 @@ def investigar(tema):
     info["datos"] = datos
     info["chips"] = chips
     return datos, confirmados, info
+
+
+# ---------------------------------------------------------------------------
+# Curar: YouTube -> transcripción -> análisis (fase 3, 14-nov-2026)
+# Pegar el enlace de un video viral: la app saca su transcripción y
+# metadatos (sin llave), analiza gancho/estructura/CTA con Pollinations
+# texto (la misma IA gratis del guion) y genera un guion nuevo con esa
+# fórmula, sin copiar el contenido. Dos variantes: mismo tema cambiando
+# cosas, o la misma fórmula con otro tema.
+# ---------------------------------------------------------------------------
+
+def extraer_video_id(url):
+    """ID de YouTube de una URL (watch, youtu.be, shorts, live, embed)."""
+    m = re.search(r"(?:v=|/shorts/|/live/|/embed/|youtu\.be/)([\w-]{11})",
+                  url or "")
+    return m.group(1) if m else None
+
+
+def _limpiar_titulo(titulo):
+    """Título limpio para investigar: sin emojis ni signos, max 80 chars."""
+    limpio = re.sub(r"[^\w\s]", " ", titulo or "")
+    limpio = re.sub(r"\s+", " ", limpio).strip()
+    return limpio[:80]
+
+
+def _limpiar_transcripcion(texto):
+    """Quita marcas de la transcripción automática ([Música], [Music],
+    [Applause]...) y colapsa espacios. Sin esto, el análisis y el
+    fallback por reglas trabajan sobre ruido (fallo real 14-nov-2026:
+    el gancho sacado de la transcripción era '[Música] [Música]...')."""
+    texto = re.sub(r"\[[^\]]{0,40}\]", " ", texto or "")
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def obtener_transcripcion(video_id):
+    """Transcripción del video (español o inglés). youtube-transcript-api
+    tiene dos APIs según la versión: 1.x (fetch) y 0.6.x (get_transcript).
+    Se prueban ambas. Sin transcripción no hay análisis del contenido."""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError as e:
+        raise RuntimeError(f"youtube-transcript-api no instalado: {e}")
+    errores = []
+    try:  # API 1.x
+        fetched = YouTubeTranscriptApi().fetch(video_id, languages=["es", "en"])
+        texto = " ".join(s.text for s in fetched)
+        if len(texto.strip()) >= 200:
+            return texto
+        errores.append("fetch: transcripción demasiado corta")
+    except Exception as e:
+        errores.append(f"fetch: {e}")
+    try:  # API 0.6.x
+        partes = YouTubeTranscriptApi.get_transcript(video_id, languages=["es", "en"])
+        texto = " ".join(p.get("text", "") for p in partes)
+        if len(texto.strip()) >= 200:
+            return texto
+        errores.append("get_transcript: transcripción demasiado corta")
+    except Exception as e:
+        errores.append(f"get_transcript: {e}")
+    raise RuntimeError("sin transcripción del video (" + "; ".join(errores) + ")")
+
+
+def obtener_metadatos_yt(video_id, url):
+    """Título, descripción y vistas del video. Primero yt-dlp (sin llave);
+    si falla, oEmbed de YouTube para el título (sin llave). Los campos
+    que no se consiguen quedan vacíos; no es un fallo del run."""
+    meta = {"titulo": "", "descripcion": "", "vistas": None, "autor": ""}
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--dump-json", "--no-download", "--no-warnings",
+             "--no-playlist", url],
+            capture_output=True, text=True, timeout=60)
+        if r.returncode == 0 and r.stdout.strip():
+            d = json.loads(r.stdout)
+            meta["titulo"] = d.get("title", "") or ""
+            meta["descripcion"] = d.get("description", "") or ""
+            meta["vistas"] = d.get("view_count")
+            meta["autor"] = d.get("uploader", "") or ""
+            return meta
+        print(f"curar: yt-dlp falló (rc={r.returncode}), pruebo oEmbed", flush=True)
+    except Exception as e:
+        print(f"curar: yt-dlp falló ({e}), pruebo oEmbed", flush=True)
+    try:
+        status, body = http_get(
+            "https://www.youtube.com/oembed?url="
+            + urllib.parse.quote(url) + "&format=json", timeout=20)
+        d = json.loads(body.decode("utf-8", "replace"))
+        meta["titulo"] = d.get("title", "") or ""
+        meta["autor"] = d.get("author_name", "") or ""
+    except Exception as e:
+        print(f"curar: oEmbed falló: {e}", flush=True)
+    return meta
+
+
+def curar_fuente(video_url):
+    """Fuente del video viral: metadatos + transcripción. Falla si no hay
+    contenido con el que trabajar (sin transcripción y sin descripción
+    suficiente no hay análisis posible)."""
+    video_id = extraer_video_id(video_url)
+    if not video_id:
+        raise RuntimeError("enlace de YouTube no válido (no se encontró el ID del video)")
+    meta = obtener_metadatos_yt(video_id, video_url)
+    transcripcion = ""
+    try:
+        transcripcion = _limpiar_transcripcion(obtener_transcripcion(video_id))
+    except Exception as e:
+        print(f"curar: {e}", flush=True)
+    texto_util = (transcripcion + " " + meta.get("descripcion", "")).strip()
+    if len(texto_util) < 200:
+        raise RuntimeError(
+            "el video no tiene transcripción ni descripción suficiente para analizarlo")
+    info = {
+        "video_id": video_id,
+        "titulo": meta.get("titulo", ""),
+        "autor": meta.get("autor", ""),
+        "vistas": meta.get("vistas"),
+        "transcripcion_chars": len(transcripcion),
+        "descripcion_chars": len(meta.get("descripcion", "")),
+    }
+    print(f"curar: video {video_id} '{meta.get('titulo', '')[:60]}' "
+          f"vistas={meta.get('vistas')} transcripción={len(transcripcion)} chars",
+          flush=True)
+    return meta, transcripcion, info
+
+
+# Palabras genéricas que no dicen de qué reloj trata el video: se
+# quitan al derivar el tema desde el título.
+GENERICS_TITULO = {
+    "restoration", "restore", "restored", "restoring", "rusty", "water",
+    "damaged", "video", "review", "unboxing", "historia", "story", "watch",
+    "watches", "reloj", "relojes", "the", "of", "a", "an", "y", "en", "el",
+    "la", "los", "las", "de", "del", "con", "por", "para", "su", "sus",
+    "full", "complete", "part", "parte", "how", "to", "is", "it", "this",
+    "that", "with", "from", "and", "in", "on", "no", "si", "más", "mas",
+    "que", "es", "son", "se", "al", "lo", "como", "este", "esta", "esto",
+    "una", "unos", "unas", "un",
+}
+
+
+def _tema_desde_titulo(titulo):
+    """Tema corto desde el título: se queda la parte antes del separador
+    de canal (│ |) y se quitan las palabras genéricas. 'Restoration of
+    Rusty Rolex - Water damaged 1996 GMT Master II' -> 'Rolex 1996 GMT
+    Master II'. Sin esto el tema era el título entero (80 caracteres) y
+    la investigación no encontraba el artículo del modelo."""
+    base = re.split(r"[│|]", titulo or "")[0]
+    palabras = [w for w in re.split(r"[^\w]+", base) if w]
+    utiles = [w for w in palabras
+              if w.lower() not in GENERICS_TITULO and len(w) >= 2
+              and not re.fullmatch(r"(19|20)\d{2}", w)]
+    tema = " ".join(utiles)[:60].strip()
+    return tema if len(utiles) >= 2 else _limpiar_titulo(titulo)[:60]
+
+
+def _parse_analisis(texto):
+    """Saca GANCHO/ESTRUCTURA/CTA/CAMBIO/TEMA de la salida del modelo.
+    Las frases de estilo se recortan a 10 palabras: van al prompt del
+    guion y los prompts largos dan HTTP 400 (verificado 13-nov-2026).
+    Tolera listas numeradas ('1. GANCHO: ...') y viñetas: el modelo no
+    siempre devuelve las líneas limpias."""
+    out = {}
+    for m in re.finditer(
+            r"(?im)^\s*(?:\d+[.)]\s*|[-*•]\s*)?"
+            r"(GANCHO|ESTRUCTURA|CTA|CAMBIO|TEMA)\s*[:\-]\s*(.+)$", texto):
+        out[m.group(1).lower()] = m.group(2).strip()
+    if "cta" in out:
+        out["cierre"] = out.pop("cta")
+    for k in ("gancho", "cierre"):
+        if k in out:
+            palabras = out[k].split()
+            out[k] = " ".join(palabras[:10])
+    if "tema" in out:
+        out["tema"] = " ".join(out["tema"].split()[:5]).strip(" \"“”''")
+    return out
+
+
+def _estilo_sano(frase):
+    """Una frase de estilo solo vale si es texto limpio: sin corchetes ni
+    marcas de música, con al menos 2 palabras. Una frase basura en el
+    prompt del guion puede disparar el HTTP 400 (fallo real 14-nov-2026:
+    'Gancho: i [Música] [Música]...' y 3 variantes fallidas)."""
+    if not frase:
+        return None
+    if "[" in frase or "]" in frase:
+        return None
+    if re.search(r"música|music", frase, re.I):
+        return None
+    if len(frase.split()) < 2:
+        return None
+    return frase
+
+
+def analizar_viral(titulo, transcripcion, descripcion):
+    """Análisis corto del viral con Pollinations texto: gancho, estructura,
+    CTA, qué cambiar y sobre qué reloj/modelo trata (TEMA, para investigar
+    los datos). Salida compacta en 5 líneas. Si el modelo falla, análisis
+    por reglas (primera y última frase): es débil pero no pierde el run.
+    La transcripción de muchos videos es sobre todo música y ruido: se
+    combina con la descripción, que suele traer el contenido real."""
+    texto = ((transcripcion or "") + "\n" + (descripcion or ""))[:4000]
+    variantes = [
+        ("Analiza este video en 5 líneas cortas. GANCHO: cómo empieza. "
+         "ESTRUCTURA: cómo sigue. CTA: cómo termina. CAMBIO: qué cambiarías. "
+         f"TEMA: el reloj o modelo, en 2-4 palabras. Video: {titulo}. "
+         f"Texto: {texto[:2500]}"),
+        ("En 5 líneas: GANCHO, ESTRUCTURA, CTA, CAMBIO, TEMA. "
+         f"Video: {titulo}. Texto: {texto[:1200]}"),
+    ]
+    for i, prompt in enumerate(variantes):
+        try:
+            url = "https://text.pollinations.ai/" + urllib.parse.quote(prompt)
+            status, body = pollinations_texto(url, timeout=40)
+            crudo = body.decode("utf-8", "replace").strip()
+            print(f"curar: análisis variante {i + 1} crudo: {crudo[:500]!r}",
+                  flush=True)
+            analisis = _parse_analisis(crudo)
+            analisis["gancho"] = _estilo_sano(analisis.get("gancho"))
+            analisis["cierre"] = _estilo_sano(analisis.get("cierre"))
+            if analisis.get("gancho") and analisis.get("tema"):
+                analisis["fuente"] = f"pollinations-v{i + 1}"
+                print(f"curar: análisis {analisis}", flush=True)
+                return analisis
+            print(f"curar: análisis variante {i + 1} incompleto: {analisis}",
+                  flush=True)
+        except Exception as e:
+            print(f"curar: análisis variante {i + 1} falló: {e}", flush=True)
+    # Fallback por reglas: primera frase = gancho, última = cierre. Se
+    # sacan de la DESCRIPCIÓN (texto limpio) antes que de la transcripción
+    # (ruido de la transcripción automática).
+    fuente_texto = (descripcion or "") if len((descripcion or "").strip()) >= 200 else texto
+    frases = [f.strip() for f in re.split(r"(?<=[.!?])\s+", fuente_texto)
+              if len(f.strip()) > 20]
+    analisis = {
+        "gancho": _estilo_sano(" ".join((frases[0] if frases else "").split()[:10])),
+        "estructura": "datos y historia del reloj",
+        "cierre": _estilo_sano(" ".join((frases[-1] if frases else "").split()[:10])),
+        "cambio": "mismo tema con otros ejemplos",
+        "tema": _tema_desde_titulo(titulo),
+        "fuente": "reglas",
+    }
+    print(f"curar: análisis por reglas {analisis}", flush=True)
+    return analisis
 
 
 # ---------------------------------------------------------------------------
@@ -643,7 +901,9 @@ def _llamada_guion(prompt, n_parrafos, palabras_min, palabras_max, claves):
     return (paras, palabras) if ok else None
 
 
-def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=None):
+def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=None,
+                  gancho_estilo=None, cierre_estilo=None,
+                  texto_extra_verificado=""):
     """Guion en llamadas cortas a Pollinations texto (anónimo).
     Una sola llamada con ~110 palabras da HTTP 400 output_token_limit_exceeded
     (verificado 13-nov-2026); cada llamada pide ~50 palabras con instrucción
@@ -657,8 +917,20 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
     añade al final del último párrafo y la validación lo comprueba igual.
     Cada llamada recibe SOLO su parte de los datos:
     con los mismos datos en todas, la segunda llamada repetía la primera
-    (verificado 13-nov-2026, Daytona)."""
+    (verificado 13-nov-2026, Daytona). En modo curar, `gancho_estilo` y
+    `cierre_estilo` (frases cortas del análisis del viral) se añaden a la
+    primera y última llamada: son forma, no texto exacto, así que no
+    disparan el 400 de "termina exactamente con..." (run #8).
+    La lista de cifras permitidas va en TODAS las llamadas (incluida la
+    variante mínima): el modelo cambia cifras de memoria aunque se le
+    diga "usa solo estos datos" (3186 por 3285, tres veces, 14-nov-2026).
+    """
     claves = palabras_clave_tema(tema)
+    permitidos = sorted(
+        (_numeros(" ".join(chips)) if chips else set())
+        | set(confirmados or []) | _numeros(texto_extra_verificado))
+    linea_cifras = (f"Cifras permitidas: {', '.join(permitidos[:10])}. "
+                    "No uses ninguna otra cifra. ") if permitidos else ""
     n_llamadas = max(2, math.ceil(palabras_objetivo / 50))
     por_llamada = palabras_objetivo // n_llamadas
     # Reparto de párrafos (clips) entre llamadas: la primera se lleva más.
@@ -690,8 +962,14 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
             f"sobre {tema}. Datos: {grupos_datos[i]} Usa solo estos datos, no inventes otros. "
             "Redacta con tus palabras. "
         )
+        if linea_cifras:
+            base += linea_cifras
         if i == 0:
             base += "Primer párrafo: gancho con el dato más sorprendente. "
+            if gancho_estilo:
+                base += f"Gancho: {gancho_estilo}. "
+        if i == n_llamadas - 1 and cierre_estilo:
+            base += f"Cierre: {cierre_estilo}. "
         base += "Solo el guion."
         # Tres variantes por llamada: la pedida, una más corta y una aún más
         # corta sin la frase de redacción (por si el 400 viene del largo del
@@ -705,12 +983,13 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
         ]
         if i == n_llamadas - 1:
             # Último intento con prompt mínimo (un solo chip): por si el
-            # 400 persiste con los datos (run #8).
+            # 400 persiste con los datos (run #8). La lista de cifras va
+            # también aquí: sin ella, esta variante escribió 3186 por 3285.
             mini_datos = grupos_chips[i][0] if grupos_chips[i] else tema
             variantes.append((
                 f"Guion en español, {n_par} párrafos cortos, unas 30 palabras, "
                 f"sobre {tema}. Datos: {mini_datos} Usa solo estos datos, "
-                "no inventes otros. Solo el guion.", 30))
+                f"no inventes otros. {linea_cifras}Solo el guion.", 30))
         parte = None
         for j, (p, objetivo) in enumerate(variantes):
             parte = _llamada_guion(
@@ -733,7 +1012,25 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
     total = contar_palabras(texto)
     bajo = texto.lower()
     termina_cta = texto.rstrip().rstrip(".").endswith(CTA.rstrip("."))
-    tiene_numero = (not confirmados or any(c in texto for c in confirmados))
+    # El guion tiene que llevar al menos una cifra de los datos que se le
+    # pasaron al modelo (no inventada): con artículo dedicado, los chips
+    # no exigen número confirmado en ambas fuentes, así que la cifra se
+    # busca en los chips, no en `confirmados` (fallo 14-nov-2026: el guion
+    # usaba 2019/2005/3285 de los chips y la validación pedía 1954).
+    numeros_datos = _numeros(" ".join(chips)) if chips else set()
+    if not numeros_datos:
+        numeros_datos = set(confirmados or [])
+    tiene_numero = (not numeros_datos or any(
+        c in texto or c.replace(".", ",") in texto for c in numeros_datos))
+    # Y ninguna cifra fuera de las verificadas: el modelo cambia cifras
+    # de memoria (fallo 14-nov-2026: escribió calibre 3186 cuando los
+    # datos decían 3285). En modo curar, el título y la descripción del
+    # video también son fuentes verificadas (p. ej. el año 1996 del reloj).
+    numeros_permitidos = set(numeros_datos) | set(confirmados or [])
+    if texto_extra_verificado:
+        numeros_permitidos |= _numeros(texto_extra_verificado)
+    numeros_guion = _numeros(texto)
+    inventados = sorted(n for n in numeros_guion if n not in numeros_permitidos)
     fallos = []
     if len(clips) != n_clips:
         fallos.append(f"clips {len(clips)} != {n_clips}")
@@ -745,6 +1042,8 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
         fallos.append("no termina con el CTA")
     if not tiene_numero:
         fallos.append("sin número confirmado en el guion")
+    if inventados:
+        fallos.append(f"números no verificados en el guion: {', '.join(inventados)}")
     ok = not fallos
     print(f"guion combinado: {total} palabras, clips={len(clips)}, ok={ok}, fallos={fallos}", flush=True)
     if not ok:
@@ -1052,8 +1351,16 @@ def main():
     ap.add_argument("--duracion", type=float, default=35)
     ap.add_argument("--formato", choices=["vertical", "horizontal"], default="vertical")
     ap.add_argument("--musica", choices=["si", "no"], default="si")
+    ap.add_argument("--modo", choices=["tema", "curar"], default="tema")
+    ap.add_argument("--video-url", default="")
+    ap.add_argument("--variante", choices=["mismo-tema", "otro-tema"], default="mismo-tema")
+    ap.add_argument("--tema-nuevo", default="")
     ap.add_argument("--outdir", default=OUT)
     args = ap.parse_args()
+    if args.modo == "curar" and not args.video_url:
+        ap.error("modo curar necesita --video-url")
+    if args.modo == "curar" and args.variante == "otro-tema" and not args.tema_nuevo:
+        ap.error("variante otro-tema necesita --tema-nuevo")
     if args.formato not in FORMATOS:
         ap.error("formato debe ser vertical u horizontal")
     fmt = FORMATOS[args.formato]
@@ -1064,6 +1371,7 @@ def main():
     t_total = time.time()
     REPORT.update({
         "tema": args.tema,
+        "modo": args.modo,
         "duracion_objetivo_s": args.duracion,
         "formato": args.formato,
         "dimensiones": f"{fmt['w']}x{fmt['h']}",
@@ -1072,14 +1380,80 @@ def main():
         "musica_pedida": args.musica,
     })
     try:
-        with fase("investigacion"):
-            datos, confirmados, info_inv = investigar(args.tema)
-            REPORT["investigacion"] = info_inv
-            print(f"datos verificados: {datos}", flush=True)
+        tema_efectivo = args.tema
+        gancho_estilo = cierre_estilo = None
+        investigacion_hecha = False
+        if args.modo == "curar":
+            REPORT["variante"] = args.variante
+            with fase("curar-fuente"):
+                meta, transcripcion, info_curar = curar_fuente(args.video_url)
+                REPORT["curar"] = info_curar
+            with fase("curar-analisis"):
+                analisis = analizar_viral(
+                    meta.get("titulo", ""), transcripcion,
+                    meta.get("descripcion", ""))
+                REPORT["curar"].update(analisis)
+                gancho_estilo = analisis.get("gancho")
+                cierre_estilo = analisis.get("cierre")
+                # El TEMA del modelo no es fiable: inventa títulos
+                # ("Rusty Rolex Revival", fallo 14-nov-2026). Candidatos en
+                # orden: el derivado del título (determinista) y luego el
+                # del modelo; se usa el primero con datos verificados.
+                tema_titulo = _tema_desde_titulo(meta.get("titulo", ""))
+                tema_modelo = (analisis.get("tema") or "").strip()
+                candidatos = [tema_titulo] if tema_titulo else []
+                if tema_modelo and tema_modelo.lower() != tema_titulo.lower():
+                    candidatos.append(tema_modelo)
+                if args.variante == "otro-tema":
+                    candidatos = [args.tema_nuevo]
+                REPORT["curar"]["candidatos_tema"] = candidatos
+                print(f"curar: candidatos de tema {candidatos}", flush=True)
+                tema_efectivo = None
+                for cand in candidatos:
+                    try:
+                        datos, confirmados, info_inv = investigar(cand)
+                        tema_efectivo = cand
+                        break
+                    except Exception as e:
+                        print(f"curar: investigar('{cand}') falló: {e}",
+                              flush=True)
+                if tema_efectivo is None:
+                    raise RuntimeError(
+                        "curar: no se encontraron datos verificados del "
+                        "tema del video")
+                REPORT["tema"] = tema_efectivo
+                REPORT["investigacion"] = info_inv
+                print(f"curar: tema efectivo '{tema_efectivo}'", flush=True)
+                print(f"datos verificados: {datos}", flush=True)
+                # La fase de investigación ya se hizo aquí: se marca para
+                # no repetirla abajo.
+                investigacion_hecha = True
+        if not investigacion_hecha:
+            with fase("investigacion"):
+                datos, confirmados, info_inv = investigar(tema_efectivo)
+                REPORT["investigacion"] = info_inv
+                print(f"datos verificados: {datos}", flush=True)
         with fase("guion"):
-            clips, fuente = generar_guion(
-                args.tema, datos, confirmados, n_clips, palabras_objetivo,
-                info_inv.get("chips"))
+            texto_extra = (
+                (meta.get("titulo", "") + " " + meta.get("descripcion", ""))
+                if args.modo == "curar" else "")
+            try:
+                clips, fuente = generar_guion(
+                    tema_efectivo, datos, confirmados, n_clips, palabras_objetivo,
+                    info_inv.get("chips"), gancho_estilo, cierre_estilo,
+                    texto_extra)
+            except RuntimeError as e:
+                if "números no verificados" not in str(e):
+                    raise
+                # El modelo cambia cifras de memoria (3186 por 3285): un
+                # reintento completo del guion. La lista de cifras
+                # permitidas ya va en todos los prompts.
+                print("guion: cifras inventadas, reintento completo del guion",
+                      flush=True)
+                clips, fuente = generar_guion(
+                    tema_efectivo, datos, confirmados, n_clips, palabras_objetivo,
+                    info_inv.get("chips"), gancho_estilo, cierre_estilo,
+                    texto_extra)
             texto = " ".join(clips)
             REPORT["guion_fuente"] = fuente
             REPORT["guion_palabras"] = contar_palabras(texto)

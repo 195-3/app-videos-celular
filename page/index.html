@@ -91,8 +91,29 @@
 
 <section>
   <h2>🎬 Nuevo video</h2>
+  <label for="modo">Modo</label>
+  <select id="modo">
+    <option value="tema" selected>Tema nuevo</option>
+    <option value="curar">Curar video viral</option>
+  </select>
+  <div id="campos-curar" class="oculto">
+    <label for="video_url">Enlace de YouTube del video viral</label>
+    <input type="text" id="video_url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+    <label for="variante">Variante</label>
+    <select id="variante">
+      <option value="mismo-tema" selected>Mismo tema, cambiando cosas</option>
+      <option value="otro-tema">Misma fórmula, otro tema</option>
+    </select>
+    <div id="campo-tema-nuevo" class="oculto">
+      <label for="tema_nuevo">Tema del video nuevo</label>
+      <input type="text" id="tema_nuevo" placeholder="Ej: Patek Philippe Nautilus" autocomplete="off">
+    </div>
+    <p class="ayuda">La app lee lo que dice el video, saca por qué funcionó (gancho, final) y hace uno nuevo con esa receta, sin copiarlo.</p>
+  </div>
+  <div id="campo-tema">
   <label for="tema">Tema del video</label>
   <input type="text" id="tema" placeholder="Ej: Rolex Daytona Paul Newman" autocomplete="off">
+  </div>
   <div class="fila">
     <div>
       <label for="duracion">Duración</label>
@@ -270,9 +291,25 @@ $("btn-probar-token").addEventListener("click", async () => {
   } catch (e) { mostrarMsg(e.message, "error"); }
 });
 
+function actualizarModo() {
+  const curar = $("modo").value === "curar";
+  $("campos-curar").classList.toggle("oculto", !curar);
+  $("campo-tema").classList.toggle("oculto", curar);
+  $("campo-tema-nuevo").classList.toggle("oculto", !curar || $("variante").value !== "otro-tema");
+}
+$("modo").addEventListener("change", actualizarModo);
+$("variante").addEventListener("change", actualizarModo);
+
 $("btn-lanzar").addEventListener("click", async () => {
+  const modo = $("modo").value;
   const tema = $("tema").value.trim();
-  if (!tema) { alert("Escribe el tema del video."); $("tema").focus(); return; }
+  const videoUrl = $("video_url").value.trim();
+  const variante = $("variante").value;
+  const temaNuevo = $("tema_nuevo").value.trim();
+  if (modo === "tema" && !tema) { alert("Escribe el tema del video."); $("tema").focus(); return; }
+  if (modo === "curar" && !videoUrl) { alert("Pega el enlace de YouTube del video viral."); $("video_url").focus(); return; }
+  if (modo === "curar" && !/youtu\.?be/.test(videoUrl)) { alert("Ese enlace no parece de YouTube."); $("video_url").focus(); return; }
+  if (modo === "curar" && variante === "otro-tema" && !temaNuevo) { alert("Escribe el tema del video nuevo."); $("tema_nuevo").focus(); return; }
   const duracion = $("duracion").value, formato = $("formato").value;
   const musica = $("musica").checked ? "si" : "no";
   const btn = $("btn-lanzar");
@@ -281,7 +318,7 @@ $("btn-lanzar").addEventListener("click", async () => {
   try {
     const antes = Date.now();
     await api("/actions/workflows/" + WF + "/dispatches", "POST",
-      { ref: "main", inputs: { tema: tema, duracion: String(duracion), formato: formato, musica: musica } });
+      { ref: "main", inputs: { tema: tema || temaNuevo || "Video curado", duracion: String(duracion), formato: formato, musica: musica, modo: modo, video_url: videoUrl, variante: variante, tema_nuevo: temaNuevo } });
     mostrarMsg("Lanzado. Buscando el run… (tarda unos segundos)", "ok");
     // El dispatch no devuelve el id: se busca el run nuevo por fecha.
     let runId = null;
@@ -296,7 +333,7 @@ $("btn-lanzar").addEventListener("click", async () => {
     }
     if (runId) {
       const mapa = getMapa();
-      mapa[runId] = { tema: tema, duracion: duracion, formato: formato, musica: musica, ts: Date.now() };
+      mapa[runId] = { tema: (modo === "curar" ? (temaNuevo || "🎬 Video curado") : tema), duracion: duracion, formato: formato, musica: musica, ts: Date.now() };
       setMapa(mapa);
       mostrarMsg("Video en marcha. Tarda unos 2 minutos: pulsa Actualizar lista.", "ok");
     } else {
