@@ -1,20 +1,35 @@
 #!/usr/bin/env python3
-"""Prueba mínima: video vertical 35 s (Seiko Astron) con pipeline recortado.
-Pasos: guion (Pollinations texto en 2 llamadas de ~55 palabras, con fallback
-verificado solo como último recurso) -> 5 imágenes (Pollinations sana) ->
-voz Kokoro Santa em_santa -> render FFmpeg 720x1280 con subtítulos quemados
--> MP4 + report.json con tiempos por fase.
-Solo prueba. Nada de publicación ni frontal.
+"""Veltora Studio — fase 2 (PROPUESTA, no desplegada aún).
+Genera un video desde un tema cualquiera, sin adaptación manual por tema:
+investigación (Wikipedia ES + DuckDuckGo Lite) -> guion (Pollinations texto
+en llamadas cortas de ~50 palabras) -> imágenes (Pollinations sana) ->
+voz Kokoro Santa em_santa -> render FFmpeg con subtítulos quemados.
+Formatos: vertical 9:16 (720x1280, TikTok/Reels/Shorts) y horizontal 16:9
+(1920x1080, YouTube largo). Duración objetivo: 30/35/45 s (5 clips) o 60 s
+(7 clips). La duración manda el número de palabras del guion (~2,6/s).
+Reglas heredadas y verificadas (13-nov-2026):
+- Pollinations texto anónimo: 1 llamada de ~110 palabras da HTTP 400
+  output_token_limit_exceeded; llamadas cortas (~50 palabras) con
+  instrucción CORTA funcionan; sin "no inventes" el modelo inventa datos.
+- Pollinations imágenes: sin marcas en el prompt (una marca lo bloquea);
+  descargas con curl sin -C - (Pollinations no soporta rangos, rc 33).
+- Subtítulos .ass con PlayResX/Y del formato; .srt sin PlayRes escala la
+  fuente ~4,4x y se corta.
+- Sin datos verificados NO hay video: si la investigación falla, el script
+  falla con error claro. No existe fallback de otro tema.
 """
 import argparse
+import html as htmlmod
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import time
-import urllib.request
+import urllib.error
 import urllib.parse
+import urllib.request
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.path.join(BASE, "work")
@@ -23,28 +38,50 @@ WORK = os.path.join(BASE, "work")
 OUT = os.path.join(os.path.dirname(BASE), "out")
 IMG_DIR = os.path.join(WORK, "img")
 
-UA = {"User-Agent": "VeltoraVideoTest/1.0 (prueba sin fines comerciales)"}
-REPORT = {"fases": {}, "exito": False}
+UA = {"User-Agent": "VeltoraStudio/2.0 (contacto: video educativo sin fines comerciales)"}
+REPORT = {"fases": {}, "exito": False, "version": "fase2"}
 
-# Guion verificado (fallback). Datos: Seiko Quartz-Astron 35SQ, primer reloj
-# de cuarzo del mundo, 25-dic-1969, Tokio; 100 unidades, oro 18 quilates,
-# 450.000 yenes (precio de un Toyota Corolla); cristal de cuarzo 8.192 Hz,
-# precisión ±5 segundos al mes. Fuentes verificadas 13-nov-2026 (Wikipedia,
-# WristBuzz, Time on the Move).
-GUION_FALLBACK = [
-    "¿Un reloj que costaba lo mismo que un carro? Eso pedían por este Seiko en 1969.",
-    "Es el Seiko Astron, el primer reloj de cuarzo del mundo. Solo hicieron cien, todos en oro de dieciocho quilates.",
-    "Salió a la venta el veinticinco de diciembre de mil novecientos sesenta y nueve, en Tokio. Costaba cuatrocientas cincuenta mil yenes.",
-    "Su secreto era un cristal de cuarzo que vibraba ocho mil ciento noventa y dos veces por segundo. Se desviaba solo cinco segundos al mes.",
-    "Ese reloj cambió la relojería para siempre y casi acaba con los mecánicos. Sígueme si quieres más historias de relojes imposibles.",
+CTA = "Sígueme si quieres más historias de relojes imposibles."
+PALABRAS_POR_SEGUNDO = 2.2  # ~77 palabras para 35 s, ~132 para 60 s.
+# Medido 13-nov-2026: guiones con muchas cifras van más lentos en Kokoro
+# (Daytona, 90 palabras -> 46,5 s = 1,9 pal/s; Grandmaster 83 -> 34,9 s;
+# Astron 101 -> 39,4 s). 2,2 deja el video dentro de 30-45 s y el reintento
+# de velocidad corrige el resto.
+
+# Música de fondo (decisión del usuario 13-nov-2026: SÍ, sin derechos).
+# Pista: "Lovely Piano Song", de Kevin MacLeod, dominio público CC0
+# (FreePD, cerrado en 2025; archivo verificado contra el original).
+# Ver la procedencia completa en assets/MUSICA-LICENCIA.md.
+MUSICA_TITULO = "Lovely Piano Song"
+MUSICA_AUTOR = "Kevin MacLeod"
+MUSICA_LICENCIA = "CC0 1.0 Universal (dominio público)"
+MUSICA_DURACION_S = 95.8  # más larga que el video más largo (60 s): solo recorte
+MUSICA_SHA1_B32 = "VH37BKF2IFY4U6TMAMBZFMU65UB6TXZP"  # digest Wayback CDX
+MUSICA_URLS = [
+    # Archivo original en el Internet Archive (captura 2019-04-03).
+    "https://web.archive.org/web/20190403072328id_/https://freepd.com/music/Lovely%20Piano%20Song.mp3",
+    # Espejo (copia bit a bit del original, mismo digest).
+    "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Lovely%20Piano%20Song.mp3",
 ]
+MUSICA_VOLUMEN = 0.2  # ~-14 dB: audible por debajo de la voz, sin taparla
 
+STOPWORDS = {
+    "el", "la", "los", "las", "de", "del", "un", "una", "unos", "unas",
+    "en", "y", "con", "por", "para", "su", "sus", "más", "mas", "que",
+    "es", "son", "se", "al", "lo", "como", "este", "esta", "esto",
+}
+
+# Imágenes genéricas de relojería, SIN marcas (una marca en el prompt lo
+# bloquea en Pollinations, verificado 13-nov-2026). 5 clips para <=45 s,
+# 7 clips para 60 s.
 PROMPTS_IMAGEN = [
-    "Macro close-up of a vintage 1969 gold quartz wristwatch, 18k yellow gold case, dark background, dramatic studio lighting, photorealistic",
-    "Tiny quartz crystal oscillator and electronic watch movement, macro photography, gold and silver components, dark background",
-    "1969 Tokyo street at Christmas night, vintage neon signs, cinematic moody lighting, photorealistic",
-    "Close-up of a luxury gold wristwatch dial with simple baton markers, textured gold dial, studio photography, dark background",
-    "Elegant gold wristwatch on dark velvet with a vintage car silhouette behind, cinematic golden light, vertical composition, photorealistic",
+    "Macro close-up of a luxury mechanical chronograph wristwatch dial, dark background, dramatic studio lighting, photorealistic",
+    "Tiny watch movement gears and balance wheel, macro photography, gold and steel components, dark background",
+    "Luxury watch auction room, elegant bidders and display case, cinematic warm light, photorealistic",
+    "Vintage race track at sunset, classic sports cars, cinematic golden light, photorealistic",
+    "Elegant luxury wristwatch on a man's wrist, dark suit cuff, cinematic light, photorealistic",
+    "Close-up of a chronograph subdial with vintage patina, textured dial, studio photography, dark background",
+    "Collection of vintage luxury wristwatches in a dark wooden box, warm light, photorealistic",
 ]
 
 
@@ -88,14 +125,13 @@ def bajar_archivo(url, ruta):
     raise RuntimeError(f"no se pudo bajar {url}")
 
 
-def http_get(url, timeout=45, intentos=2):
-    """GET de texto (Pollinations). Un 4xx no se reintenta."""
-    import urllib.error
-
+def http_get(url, timeout=45, intentos=2, headers=None):
+    """GET de texto. Un 4xx no se reintenta."""
     ultimo = None
     for i in range(intentos):
         try:
-            req = urllib.request.Request(url, headers={**UA, "Connection": "close"})
+            req = urllib.request.Request(
+                url, headers={**UA, "Connection": "close", **(headers or {})})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
@@ -114,6 +150,317 @@ def contar_palabras(texto):
     return len([w for w in re.split(r"\s+", texto.strip()) if w])
 
 
+def palabras_clave_tema(tema):
+    """Palabras significativas del tema para validar el guion."""
+    out = []
+    for w in re.split(r"[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+", tema.lower()):
+        if len(w) >= 3 and w not in STOPWORDS and w not in out:
+            out.append(w)
+    return out[:3]
+
+
+# ---------------------------------------------------------------------------
+# Investigación: Wikipedia ES (base) + DuckDuckGo Lite (segunda fuente)
+# ---------------------------------------------------------------------------
+
+def _frases_con_datos(texto, claves=(), distintivas=()):
+    """Frases con cifras (años, precios, cantidades). Las cifras son lo que
+    hace verificable un dato en un guion corto. Las frases que mencionan el
+    tema puntúan más; las que mencionan la palabra distintiva del tema
+    (la que no está en el título del artículo) puntúan aún más: el
+    extracto de Wikipedia mezcla historia general del tema."""
+    texto = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", texto)
+    texto = re.sub(r"\s+", " ", texto)
+    frases = re.split(r"(?<=[.!?])\s+", texto)
+    buenas = []
+    for f in frases:
+        f = f.strip()
+        if len(f) < 25 or len(f) > 300:
+            continue
+        if "[" in f or "editar" in f.lower():
+            continue
+        if re.search(r"enlaces externos|véase también|vease tambien|categoría multimedia|categoria multimedia", f.lower()):
+            continue  # restos de la estructura del artículo, no datos
+        digitos = re.findall(r"\d{4}|\d[\d.,]*", f)
+        if not digitos:
+            continue
+        puntos = 0
+        if re.search(r"\b(1[89]\d{2}|20[0-3]\d)\b", f):
+            puntos += 2  # año concreto
+        puntos += min(len(digitos), 3)
+        if len(f) < 160:
+            puntos += 1
+        bajo = f.lower()
+        if any(k in bajo for k in claves):
+            puntos += 2  # menciona el tema
+        if any(k in bajo for k in distintivas):
+            puntos += 3  # menciona lo distintivo del tema
+        if re.search(r"millones|dólares|dolares|euros|récord|record|subasta|million|dollars|auction", bajo):
+            puntos += 3  # precio récord o subasta: el gancho de estos videos
+        buenas.append((puntos, f))
+    buenas.sort(key=lambda x: -x[0])
+    return [f for _, f in buenas]
+
+
+def _chips_de_frases(frases, confirmados, distintivas, claves):
+    """Convierte frases en fragmentos cortos con cifras, estilo lista de
+    datos ("desde 1963, cuatro generaciones; segunda serie 1988").
+    El modelo compone el guion con sus palabras; con frases completas
+    las copiaba tal cual (verificado 13-nov-2026, Daytona).
+    La coma decimal española ("17,8") NO parte el fragmento: solo se
+    parte por coma seguida de espacio. Se descartan subordinadas sueltas
+    ("que Newman le había regalado...") que quedan sin sujeto.
+    VALIDEZ (fallo Nautilus 13-nov-2026): el fragmento solo vale si su
+    FRASE MADRE menciona el tema (una palabra distintiva, o cualquier
+    palabra del tema si no hay distintivas) y, cuando hay números
+    confirmados en ambas fuentes, el fragmento contiene uno. La mención
+    se mira en la frase, no en el fragmento: al partir por comas, la
+    palabra del tema y la cifra pueden quedar en segmentos distintos
+    ("...Nautilus, from the 1976 steel 3700 Jumbo..."). Sin la segunda
+    condición, un año no confirmado ("En marzo de 1877") pasaba como
+    dato verificado; sin la primera, un chip de otro reloj con un número
+    confirmado ("Ingenieur... 1976") se colaba en el guion."""
+    refs = distintivas if distintivas else claves
+    chips = []
+    for f in frases:
+        if not any(k in f.lower() for k in refs):
+            continue
+        # Segmentos: los cortos (<15) se unen al siguiente en vez de
+        # descartarse, porque suelen llevar el año ("En 2017, el Daytona
+        # de Paul Newman se subastó...": sin unir, el 2017 se perdía).
+        segmentos = [s.strip().strip(".").strip()
+                     for s in re.split(r"[:,;](?=\s|$)", f)]
+        fusionados, buf = [], ""
+        for s in segmentos:
+            if buf:
+                s = buf + ", " + s
+                buf = ""
+            if len(s) < 15:
+                buf = s
+                continue
+            fusionados.append(s)
+        for seg in fusionados:
+            if len(seg) > 160:
+                continue
+            if re.match(r"^(que|y|cuando|donde|como|para|pero)\s", seg, re.I):
+                continue
+            if not re.search(r"\d", seg):
+                continue
+            if confirmados and not (_numeros(seg) & set(confirmados)):
+                continue
+            if seg not in chips:
+                chips.append(seg)
+    return chips
+
+
+def _norm_num(s):
+    """Normaliza un número para compararlo entre fuentes: la coma decimal
+    española ("17,8") y el punto inglés ("17.8") son el mismo número, y
+    los separadores de miles ("17,752,500" / "17.752.500") se quitan.
+    Sin esto, el 17,8 de Wikipedia nunca confirmaba el 17.8 de DDG."""
+    s = s.replace(" ", "").replace("\u00a0", "")
+    if re.fullmatch(r"\d+,\d{1,2}", s):  # coma decimal: 17,8 -> 17.8
+        return s.replace(",", ".")
+    if "," in s:  # miles con coma: 17,752,500 -> 17752500
+        return s.replace(",", "")
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+", s):  # miles con punto
+        return s.replace(".", "")
+    return s
+
+
+def _numeros(texto):
+    return {_norm_num(n) for n in re.findall(r"\b\d{4}\b|\b\d[\d.,]{2,}\b", texto)}
+
+
+def _wiki_candidato(lang, tema, claves, max_hits=3):
+    """Busca el artículo de Wikipedia (idioma `lang`) que de verdad trata
+    del tema. Prueba hasta `max_hits` resultados en orden.
+    PUERTA DE RELEVANCIA (fallo real 13-nov-2026, Nautilus): la búsqueda
+    en español de "Patek Philippe Nautilus" devuelve el artículo de la
+    EMPRESA ("Patek Philippe & Co."), y sus frases (1851, 1877, subasta
+    de "La hija del relojero" en 2023) NO hablan del Nautilus. El modelo
+    las pegó al Nautilus y el video salió con datos falsos. Por eso un
+    candidato solo vale si al menos una de sus frases con datos menciona
+    una palabra distintiva (del tema pero no del título del artículo).
+    Devuelve (puntuación, titulo, frases, distintivas). Puntuación: 10
+    si el título es el del modelo mismo (contiene una distintiva, o no
+    hay distintivas porque el título cubre todo el tema), más 1 por cada
+    palabra del tema en el título. Sirve para preferir el artículo
+    dedicado ("Patek Philippe Nautilus") sobre uno tangencial (el
+    diseñador "Gérald Genta"). Sin candidato válido: (0, None, [], [])."""
+    base = f"https://{lang}.wikipedia.org/w/api.php"
+    try:
+        q = urllib.parse.quote(tema)
+        status, body = http_get(
+            f"{base}?action=query&list=search&srsearch={q}&srlimit=5&format=json",
+            timeout=20)
+        res = json.loads(body.decode("utf-8", "replace"))
+        hits = res.get("query", {}).get("search", [])[:max_hits]
+    except Exception as e:
+        print(f"investigación: Wikipedia {lang} búsqueda falló: {e}", flush=True)
+        return 0, None, [], []
+    mejor = None
+    for hit in hits:
+        titulo = hit["title"]
+        # Palabra distintiva: del tema pero no del título del artículo
+        # (p. ej. "paul" en "Rolex Daytona Paul Newman" -> artículo "Rolex Daytona").
+        titulo_bajo = titulo.lower()
+        distintivas = [k for k in claves if k not in titulo_bajo]
+        try:
+            status, body = http_get(
+                f"{base}?action=query&prop=extracts&explaintext=1"
+                "&exsectionformat=plain&titles="
+                + urllib.parse.quote(titulo) + "&format=json", timeout=20)
+            pag = json.loads(body.decode("utf-8", "replace"))
+            pages = pag.get("query", {}).get("pages", {})
+            ext = ""
+            for p in pages.values():
+                ext = p.get("extract", "") or ""
+        except Exception as e:
+            print(f"investigación: Wikipedia {lang} extracto de '{titulo}' falló: {e}", flush=True)
+            continue
+        frases = _frases_con_datos(ext[:12000], claves, distintivas)
+        if distintivas:
+            # La puerta mira TODAS las frases con datos, no solo las 5
+            # mejores: en el artículo bueno ("Rolex Daytona") las frases
+            # de Paul Newman no siempre entran en el top 5 por puntos.
+            menciona = any(any(d in f.lower() for d in distintivas) for f in frases)
+            if not menciona:
+                print(f"investigación: Wikipedia {lang} '{titulo}' descartado: "
+                      f"ninguna frase con datos menciona {distintivas}", flush=True)
+                continue
+        es_modelo = (not distintivas
+                     or any(d in titulo_bajo for d in distintivas))
+        puntos = (10 if es_modelo else 0) + sum(
+            1 for k in claves if k in titulo_bajo)
+        print(f"investigación: Wikipedia {lang} '{titulo}', {len(frases)} frases con datos, puntos={puntos}", flush=True)
+        if mejor is None or puntos > mejor[0]:
+            mejor = (puntos, titulo, frases, distintivas)
+    return mejor if mejor is not None else (0, None, [], [])
+
+
+def _chip_valido(chip, confirmados, distintivas, claves):
+    """Un fragmento solo entra al guion si menciona el tema (una palabra
+    distintiva, o cualquier palabra del tema si no hay distintivas) Y,
+    cuando hay números confirmados en ambas fuentes, contiene uno de
+    ellos. Sin la segunda condición, un chip con un año no confirmado
+    ("En marzo de 1877") pasaba como dato verificado y el modelo lo
+    pegaba a otro reloj (fallo Nautilus 13-nov-2026). Sin la primera,
+    un chip de otro reloj con un número confirmado ("Ingenieur... 1976")
+    se colaba en el guion."""
+    bajo = chip.lower()
+    refs = distintivas if distintivas else claves
+    if not any(k in bajo for k in refs):
+        return False
+    if confirmados:
+        return any(n in chip for n in confirmados)
+    return True
+
+
+def investigar(tema):
+    """Devuelve (datos, info). datos: texto corto (<=350 caracteres) con
+    hechos verificados para los prompts del guion. info: detalle para el
+    reporte. Falla si no hay datos verificados: sin investigación no hay
+    video, y nunca se usa el fallback de otro tema."""
+    info = {"tema": tema}
+    claves = palabras_clave_tema(tema)
+    wiki_frases, articulo, distintivas = [], None, []
+    fuente = None
+    puntos, titulo, frases, dist = _wiki_candidato("es", tema, claves)
+    if titulo:
+        wiki_frases, articulo, distintivas, fuente = frases, titulo, dist, "wikipedia-es"
+    if puntos < 10:
+        # Sin artículo del modelo en español (pasa con el Nautilus, donde
+        # lo mejor es el diseñador): probar en inglés; gana el de mayor
+        # puntuación y el español empata. El guion se escribe en español
+        # igual; los datos pueden venir en inglés.
+        puntos_en, titulo_en, frases_en, dist_en = _wiki_candidato("en", tema, claves)
+        if titulo_en and puntos_en > puntos:
+            wiki_frases, articulo, distintivas, fuente = frases_en, titulo_en, dist_en, "wikipedia-en"
+    if articulo:
+        info["articulo_wiki"] = articulo
+        info["frases_wiki"] = len(wiki_frases)
+
+    ddg_texto, ddg_n = "", 0
+    for intento_ddg in range(3):  # DDG Lite a veces devuelve 0 resultados
+        try:
+            status, body = http_get(
+                "https://lite.duckduckgo.com/lite/?q=" + urllib.parse.quote(tema),
+                timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+            h = body.decode("utf-8", "replace")
+            titulos = re.findall(r"class=['\"]result-link['\"]>(.*?)</a>", h)
+            snips = re.findall(r"class=['\"]result-snippet['\"]>(.*?)</td>", h, re.S)
+            limpio = lambda s: htmlmod.unescape(re.sub(r"<[^>]+>", "", s)).strip()
+            ddg_n = len(titulos)
+            ddg_texto = " ".join(limpio(s) for s in snips)
+            info["resultados_ddg"] = ddg_n
+            print(f"investigación: DDG Lite, {ddg_n} resultados", flush=True)
+            if ddg_n > 0:
+                break
+            print(f"investigación: DDG Lite dio 0 resultados, reintento en {5 * (intento_ddg + 1)} s", flush=True)
+            time.sleep(5 * (intento_ddg + 1))
+        except Exception as e:
+            print(f"investigación: DDG Lite falló: {e}", flush=True)
+            break
+
+    # Números confirmados: aparecen en Wikipedia Y en DDG (dos fuentes).
+    nums_wiki = set()
+    for f in wiki_frases:
+        nums_wiki |= _numeros(f)
+    nums_ddg = _numeros(ddg_texto)
+    confirmados = sorted(nums_wiki & nums_ddg)
+    info["numeros_confirmados"] = confirmados
+    print(f"investigación: números confirmados en ambas fuentes: {confirmados}", flush=True)
+
+    # Datos como fragmentos cortos con cifras (no frases completas: el
+    # modelo las copiaba). Cada chip pasa el filtro de validez: número
+    # confirmado en ambas fuentes, o mención de una palabra distintiva.
+    # Si de Wikipedia no salen al menos 2 chips válidos, segunda vía:
+    # frases con datos de los snippets de DDG (suelen ser del modelo
+    # exacto: para el Nautilus, DDG trae 1976 y Genta).
+    frases = wiki_frases[:12]
+    chips = _chips_de_frases(frases, confirmados, distintivas, claves)
+    if len(chips) < 2:
+        # Los chips de DDG se SUMAN a los de Wikipedia (no los sustituyen):
+        # un tema como el Nautilus solo tiene 1 chip válido en Wikipedia
+        # (el artículo dedicado no existe) y el resto viene de DDG.
+        alt = _frases_con_datos(ddg_texto, claves)
+        alt_chips = _chips_de_frases(alt[:10], confirmados, distintivas, claves)
+        nuevos = [c for c in alt_chips if c not in chips]
+        if nuevos:
+            chips = chips + nuevos
+            if fuente is None:
+                fuente = "ddg-lite"
+            print(f"investigación: DDG Lite aporta {len(nuevos)} chips válidos", flush=True)
+    if len(chips) < 2:
+        raise RuntimeError(
+            "investigación sin datos verificados para el tema "
+            f"(wiki: {len(wiki_frases)} frases, ddg: {ddg_n} resultados, "
+            f"chips válidos: {len(chips)}; confirmados: {confirmados})")
+    # Garantizar que al menos un número confirmado en ambas fuentes esté
+    # en los datos, si existe.
+    if confirmados and not any(c in " ".join(chips) for c in confirmados):
+        for f in wiki_frases:
+            extra = _chips_de_frases([f], confirmados, distintivas, claves)
+            if extra:
+                chips = extra + chips
+                break
+    chips = chips[:6]
+    datos = ", ".join(chips)
+    if len(datos) > 280:  # el prompt del guion tiene que seguir siendo corto
+        datos = datos[:280].rsplit(" ", 1)[0]
+    if len(datos) < 40:
+        raise RuntimeError("investigación: datos demasiado cortos para el guion")
+    info["fuente_datos"] = fuente
+    info["datos"] = datos
+    info["chips"] = chips
+    return datos, confirmados, info
+
+
+# ---------------------------------------------------------------------------
+# Guion: Pollinations texto en llamadas cortas (~50 palabras cada una)
+# ---------------------------------------------------------------------------
+
 def _parrafos(texto):
     """Divide en párrafos: primero por líneas en blanco; si no hay,
     por saltos de línea simples. Quita preámbulos del modelo."""
@@ -130,11 +477,14 @@ def _parrafos(texto):
     return paras
 
 
-def _llamada_guion(prompt, n_parrafos, palabras_min, palabras_max, obligatorias):
+def _llamada_guion(prompt, n_parrafos, palabras_min, palabras_max, claves):
     """Una llamada a Pollinations texto. Devuelve (parrafos, palabras) o None."""
     url = "https://text.pollinations.ai/" + urllib.parse.quote(prompt)
     try:
-        status, body = http_get(url, timeout=45)
+        # Un solo intento por variante (timeout 40 s): las 3 variantes ya
+        # son los reintentos. Con intentos=2 cada variante costaba ~90 s
+        # cuando el servidor se quedaba colgado (verificado 13-nov-2026).
+        status, body = http_get(url, timeout=40, intentos=1)
     except Exception as e:
         print(f"Pollinations texto falló: {e}", flush=True)
         return None
@@ -146,88 +496,131 @@ def _llamada_guion(prompt, n_parrafos, palabras_min, palabras_max, obligatorias)
         status == 200
         and len(paras) == n_parrafos
         and palabras_min <= palabras <= palabras_max
-        and all(k in bajo for k in obligatorias)
+        and (not claves or any(k in bajo for k in claves))
     )
-    print(f"Pollinations texto: status={status}, palabras={palabras}, parrafos={len(paras)}, ok={ok}", flush=True)
+    print(f"Pollinations texto: status={status}, palabras={palabras}, "
+          f"parrafos={len(paras)}, ok={ok}", flush=True)
     return (paras, palabras) if ok else None
 
 
-def generar_guion(tema):
-    """Guion en 2 llamadas a Pollinations texto (anónimo, modelo por defecto).
+def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=None):
+    """Guion en llamadas cortas a Pollinations texto (anónimo).
     Una sola llamada con ~110 palabras da HTTP 400 output_token_limit_exceeded
-    (verificado 13-nov-2026); dos llamadas de ~50/55 palabras quedan bajo el
-    límite, pero SOLO con instrucción corta: con la instrucción larga la
-    llamada 1 daba 400 incluso pidiendo 40 palabras. Verificado 13-nov-2026.
-    El fallback verificado es solo último recurso si alguna llamada falla."""
-    # Instrucción CORTA (ver arriba): la larga empuja el total por encima
-    # del límite anónimo y da 400.
-    prompt1 = (
-        f"Guion en español, 3 párrafos cortos, unas 50 palabras, sobre {tema}. "
-        "Datos: primer reloj de cuarzo del mundo, 25 de diciembre de 1969, "
-        "cien unidades en oro de 18 quilates. Usa solo estos datos, no inventes otros. "
-        "Primer párrafo: gancho con el precio de un carro. Solo el guion."
-    )
-    prompt1_corto = prompt1.replace("unas 50 palabras", "unas 40 palabras")
-    prompt2 = (
-        f"Guion en español, 2 párrafos cortos, unas 55 palabras, sobre {tema}. "
-        "Datos: cristal de cuarzo de 8192 hercios, precisión de 5 segundos al mes, "
-        "desató la crisis del cuarzo. Usa solo estos datos, no inventes otros. "
-        "Último párrafo termina exactamente con: "
-        "Sígueme si quieres más historias de relojes imposibles. Solo el guion."
-    )
-    prompt2_corto = prompt2.replace("unas 55 palabras", "unas 40 palabras")
-    parte1 = None
-    for p in (prompt1, prompt1_corto):
-        parte1 = _llamada_guion(p, 3, 35, 60, ["astron"])
-        if parte1:
-            break
-    parte2 = None
-    for p in (prompt2, prompt2_corto):
-        parte2 = _llamada_guion(p, 2, 35, 65, ["sígueme"])
-        if parte2:
-            break
-    if parte1 and parte2:
-        clips = parte1[0] + parte2[0]
-        texto = " ".join(clips)
-        bajo = texto.lower()
-        ok = (
-            len(clips) == 5
-            and 80 <= contar_palabras(texto) <= 170
-            and ("1969" in texto or "sesenta y nueve" in bajo)
-            and "cuarzo" in bajo
-            and "astron" in bajo
-            and "sígueme" in bajo
-        )
-        print(f"guion 2 llamadas: {contar_palabras(texto)} palabras, ok={ok}", flush=True)
-        if ok:
-            REPORT["guion_llamada1_palabras"] = parte1[1]
-            REPORT["guion_llamada2_palabras"] = parte2[1]
-            return clips, "pollinations-2-llamadas"
-        print("Guion combinado no válido, uso fallback", flush=True)
+    (verificado 13-nov-2026); cada llamada pide ~50 palabras con instrucción
+    CORTA: la instrucción larga daba 400 incluso pidiendo 40 palabras.
+    Sin "no inventes", el modelo inventa datos. El último párrafo termina
+    con el CTA exacto. Cada llamada recibe SOLO su parte de los datos:
+    con los mismos datos en todas, la segunda llamada repetía la primera
+    (verificado 13-nov-2026, Daytona)."""
+    claves = palabras_clave_tema(tema)
+    n_llamadas = max(2, math.ceil(palabras_objetivo / 50))
+    por_llamada = palabras_objetivo // n_llamadas
+    # Reparto de párrafos (clips) entre llamadas: la primera se lleva más.
+    reparto, resto = divmod(n_clips, n_llamadas)
+    n_parrafos = []
+    for i in range(n_llamadas):
+        n_parrafos.append(reparto + (1 if i < resto else 0))
+    # Reparto de datos entre llamadas: grupos contiguos de chips.
+    grupos_datos = []
+    if chips:
+        por_grupo, resto_c = divmod(len(chips), n_llamadas)
+        idx = 0
+        for i in range(n_llamadas):
+            n = por_grupo + (1 if i < resto_c else 0)
+            grupos_datos.append(", ".join(chips[idx:idx + n]) if n else datos)
+            idx += n
     else:
-        print("Alguna llamada del guion falló, uso fallback", flush=True)
-    return list(GUION_FALLBACK), "fallback"
+        grupos_datos = [datos] * n_llamadas
+    print(f"guion: {palabras_objetivo} palabras objetivo, {n_llamadas} llamadas, "
+          f"reparto de párrafos {n_parrafos}, claves={claves}", flush=True)
+    partes = []
+    for i, n_par in enumerate(n_parrafos):
+        palabras = por_llamada if i < n_llamadas - 1 else palabras_objetivo - por_llamada * (n_llamadas - 1)
+        base = (
+            f"Guion en español, {n_par} párrafos cortos, unas {palabras} palabras, "
+            f"sobre {tema}. Datos: {grupos_datos[i]} Usa solo estos datos, no inventes otros. "
+            "Redacta con tus palabras. "
+        )
+        if i == 0:
+            base += "Primer párrafo: gancho con el dato más sorprendente. "
+        if i == n_llamadas - 1:
+            base += f"Último párrafo termina exactamente con: {CTA} "
+        base += "Solo el guion."
+        # Tres variantes por llamada: la pedida, una más corta y una aún más
+        # corta sin la frase de redacción (por si el 400 viene del largo del
+        # prompt). Pollinations anónimo da 400 esporádicos; cada variante es
+        # un intento nuevo con su propio rango de palabras válido.
+        variantes = [
+            (base, palabras),
+            (base.replace(f"unas {palabras} palabras", "unas 40 palabras"), 40),
+            (base.replace(f"unas {palabras} palabras", "unas 30 palabras").replace(
+                "Redacta con tus palabras. ", ""), 30),
+        ]
+        parte = None
+        for j, (p, objetivo) in enumerate(variantes):
+            parte = _llamada_guion(
+                p, n_par, max(20, objetivo - 12), objetivo + 15, claves)
+            if parte:
+                break
+            if j < len(variantes) - 1:
+                print(f"guion: llamada {i + 1} variante {j + 1} falló, reintento en 8 s", flush=True)
+                time.sleep(8)
+        if not parte:
+            print(f"guion: llamada {i + 1} falló, no hay fallback de otro tema", flush=True)
+            raise RuntimeError(f"guion: la llamada {i + 1} a Pollinations falló")
+        partes.append(parte)
+    clips = [p for paras, _ in partes for p in paras]
+    texto = " ".join(clips)
+    total = contar_palabras(texto)
+    bajo = texto.lower()
+    termina_cta = texto.rstrip().rstrip(".").endswith(CTA.rstrip("."))
+    tiene_numero = (not confirmados or any(c in texto for c in confirmados))
+    fallos = []
+    if len(clips) != n_clips:
+        fallos.append(f"clips {len(clips)} != {n_clips}")
+    # El mínimo es flexible (las variantes cortas de reintento dan menos
+    # palabras): lo que manda es la duración real de la voz, que se reporta.
+    if not (palabras_objetivo * 0.7 <= total <= palabras_objetivo * 1.25):
+        fallos.append(f"palabras {total} fuera de rango")
+    if not termina_cta:
+        fallos.append("no termina con el CTA")
+    if not tiene_numero:
+        fallos.append("sin número confirmado en el guion")
+    ok = not fallos
+    print(f"guion combinado: {total} palabras, clips={len(clips)}, ok={ok}, fallos={fallos}", flush=True)
+    if not ok:
+        raise RuntimeError(f"guion combinado no válido: {'; '.join(fallos)}")
+    REPORT["guion_llamadas"] = [p[1] for p in partes]
+    return clips, "pollinations"
 
 
-def bajar_imagenes():
+# ---------------------------------------------------------------------------
+# Imágenes, voz, render
+# ---------------------------------------------------------------------------
+
+def bajar_imagenes(n, formato):
     os.makedirs(IMG_DIR, exist_ok=True)
+    ancho, alto = (768, 768) if formato == "vertical" else (1024, 576)
     rutas = []
-    for i, prompt in enumerate(PROMPTS_IMAGEN):
+    for i in range(n):
+        prompt = PROMPTS_IMAGEN[i]
+        if formato == "horizontal":
+            prompt += ", wide 16:9 composition"
         url = (
             "https://image.pollinations.ai/prompt/"
             + urllib.parse.quote(prompt)
-            + "?model=sana&width=768&height=768&seed=11"
+            + f"?model=sana&width={ancho}&height={alto}&seed=11"
         )
         ruta = os.path.join(IMG_DIR, f"{i}.jpg")
         try:
-            n = bajar_archivo(url, ruta)
+            nbytes = bajar_archivo(url, ruta)
         except Exception as e:
             raise RuntimeError(f"imagen {i} no se pudo bajar: {e}")
         with open(ruta, "rb") as f:
             magic = f.read(2)
-        if magic != b"\xff\xd8" or n < 10000:
-            raise RuntimeError(f"imagen {i}: archivo no válido ({n} bytes)")
-        print(f"imagen {i}: {n} bytes", flush=True)
+        if magic != b"\xff\xd8" or nbytes < 10000:
+            raise RuntimeError(f"imagen {i}: archivo no válido ({nbytes} bytes)")
+        print(f"imagen {i}: {nbytes} bytes", flush=True)
         rutas.append(ruta)
     return rutas
 
@@ -252,27 +645,40 @@ def bajar_modelo_kokoro():
         yield nombre, ruta, voices
 
 
-def generar_voz(texto, wav_path):
+def generar_voz(texto, wav_path, duracion_objetivo):
+    """Voz Kokoro Santa. Si la duración real se desvía más del 15% del
+    objetivo, un reintento con la velocidad ajustada (0,9–1,1)."""
     from kokoro_onnx import Kokoro
 
-    ultimo_error = None
-    for nombre, modelo, voices in bajar_modelo_kokoro():
-        for lang in ("es", None):
-            try:
-                print(f"voz: modelo={nombre} lang={lang}", flush=True)
-                kokoro = Kokoro(modelo, voices)
-                kwargs = {"voice": "em_santa", "speed": 1.0}
-                if lang:
-                    kwargs["lang"] = lang
-                samples, sr = kokoro.create(texto, **kwargs)
-                import soundfile as sf
+    def _intento(speed):
+        ultimo = None
+        for nombre, modelo, voices in bajar_modelo_kokoro():
+            for lang in ("es", None):
+                try:
+                    print(f"voz: modelo={nombre} lang={lang} speed={speed}", flush=True)
+                    kokoro = Kokoro(modelo, voices)
+                    kwargs = {"voice": "em_santa", "speed": speed}
+                    if lang:
+                        kwargs["lang"] = lang
+                    samples, sr = kokoro.create(texto, **kwargs)
+                    import soundfile as sf
+                    sf.write(wav_path, samples, sr)
+                    return nombre, lang or "defecto", duracion_audio(wav_path)
+                except Exception as e:
+                    ultimo = e
+                    print(f"voz falló modelo={nombre} lang={lang}: {e}", flush=True)
+        raise RuntimeError(f"Kokoro falló en todos los intentos: {ultimo}")
 
-                sf.write(wav_path, samples, sr)
-                return nombre, lang or "defecto"
-            except Exception as e:
-                ultimo_error = e
-                print(f"voz falló modelo={nombre} lang={lang}: {e}", flush=True)
-    raise RuntimeError(f"Kokoro falló en todos los intentos: {ultimo_error}")
+    modelo, lang, dur = _intento(1.0)
+    desv = abs(dur - duracion_objetivo) / duracion_objetivo
+    if desv > 0.15:
+        speed = max(0.9, min(1.1, dur / duracion_objetivo))
+        print(f"voz: duración {dur:.1f}s vs objetivo {duracion_objetivo}s "
+              f"({desv:.0%}), reintento con speed={speed:.2f}", flush=True)
+        modelo2, lang2, dur2 = _intento(speed)
+        if abs(dur2 - duracion_objetivo) < abs(dur - duracion_objetivo):
+            modelo, lang, dur = modelo2, lang2, dur2
+    return modelo, lang, dur
 
 
 def duracion_audio(wav_path):
@@ -284,7 +690,76 @@ def duracion_audio(wav_path):
     return float(out.stdout.strip())
 
 
-def envolver(texto, ancho=28):
+def obtener_musica():
+    """Pista de fondo CC0. Primero el archivo del repo (assets/); si no
+    está, descarga del Internet Archive (original FreePD) o del espejo.
+    Devuelve la ruta o None si no se consigue (la música es opcional:
+    sin ella el video sale solo con voz, no falla el run)."""
+    import base64
+    import hashlib
+
+    repo_mp3 = os.path.join(os.path.dirname(BASE), "assets", "musica-fondo.mp3")
+    if os.path.exists(repo_mp3) and os.path.getsize(repo_mp3) > 1000000:
+        print(f"música: usando {repo_mp3} (del repo)", flush=True)
+        return repo_mp3
+    destino = os.path.join(WORK, "musica-fondo.mp3")
+    if os.path.exists(destino) and os.path.getsize(destino) > 1000000:
+        return destino
+    for url in MUSICA_URLS:
+        try:
+            print(f"música: descargando {url[:80]}...", flush=True)
+            bajar_archivo(url, destino)
+            with open(destino, "rb") as f:
+                digest = base64.b32encode(hashlib.sha1(f.read()).digest()).decode()
+            if digest == MUSICA_SHA1_B32:
+                print("música: digest verificado (original FreePD)", flush=True)
+                return destino
+            print(f"música: digest distinto ({digest}), pruebo la siguiente fuente", flush=True)
+            os.remove(destino)
+        except Exception as e:
+            print(f"música: no se pudo bajar de esta fuente: {e}", flush=True)
+    return None
+
+
+def mezclar_musica(voz_wav, musica_mp3, salida_wav, duracion):
+    """Mezcla la música suave debajo de la voz. La voz manda: la música va
+    a volumen 0,2 (~-14 dB) con entrada y salida en fundido, y amix con
+    normalize=0 para no bajar el nivel de la voz.
+    OJO (verificado 13-nov-2026): la voz de Kokoro es mono 24 kHz y la
+    conversión automática mono->estéreo de FFmpeg la baja ~3 dB (factor
+    1/sqrt(2) del rematrix). Por eso la voz se sube a estéreo 48 kHz con
+    `pan` (duplica a nivel completo) ANTES de mezclar; con `pan` la mezcla
+    mide lo teórico (voz intacta + música ~11 dB por debajo)."""
+    fade_out_ini = max(0.0, duracion - 2.0)
+    filtro = (
+        "[0:a]aresample=48000,pan=stereo|c0=c0|c1=c0[v];"
+        f"[1:a]aresample=48000,pan=stereo|c0=c0|c1=c1,atrim=0:{duracion:.2f},"
+        f"volume={MUSICA_VOLUMEN},"
+        f"afade=t=in:st=0:d=1,afade=t=out:st={fade_out_ini:.2f}:d=2[m];"
+        "[v][m]amix=inputs=2:duration=first:normalize=0[a]"
+    )
+    cmd([
+        "ffmpeg", "-y", "-i", voz_wav, "-stream_loop", "-1", "-i", musica_mp3,
+        "-filter_complex", filtro, "-map", "[a]",
+        "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", salida_wav,
+    ])
+    return duracion_audio(salida_wav)
+
+
+def normalizar_voz(voz_wav, salida_wav):
+    """Voz mono 24 kHz -> estéreo 48 kHz a nivel completo (mismo `pan` que
+    en la mezcla, para que el video sin música suene igual de fuerte que
+    el video con música). Sin esto, la conversión automática de FFmpeg
+    en el render baja la voz ~3 dB."""
+    cmd([
+        "ffmpeg", "-y", "-i", voz_wav, "-af",
+        "aresample=48000,pan=stereo|c0=c0|c1=c0",
+        "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", salida_wav,
+    ])
+    return duracion_audio(salida_wav)
+
+
+def envolver(texto, ancho):
     palabras = texto.split()
     lineas, actual = [], ""
     for w in palabras:
@@ -298,15 +773,15 @@ def envolver(texto, ancho=28):
     return "\\n".join(lineas)
 
 
-def escribir_ass(clips, duraciones, ruta):
-    """Subtítulos en .ass con PlayResX/Y = 720x1280. Un .srt sin PlayRes hace
+def escribir_ass(clips, duraciones, ruta, ancho_px, alto_px, fuente_px, ancho_linea, margen_v):
+    """Subtítulos en .ass con PlayResX/Y del formato. Un .srt sin PlayRes hace
     que libass asuma 384x288 y escale la fuente ~4,4x: las letras salían
     gigantes y cortadas por los bordes (verificado 13-nov-2026)."""
     t = 0.0
     eventos = []
     for clip, d in zip(clips, duraciones):
         ini, fin = t, t + d
-        texto = envolver(clip).replace("\\n", "\\N")
+        texto = envolver(clip, ancho_linea).replace("\\n", "\\N")
         eventos.append(
             f"Dialogue: 0,{_fmt_ass(ini)},{_fmt_ass(fin)},Default,,0,0,0,,{texto}"
         )
@@ -314,8 +789,8 @@ def escribir_ass(clips, duraciones, ruta):
     contenido = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
-        "PlayResX: 720\n"
-        "PlayResY: 1280\n"
+        f"PlayResX: {ancho_px}\n"
+        f"PlayResY: {alto_px}\n"
         "ScaledBorderAndShadow: yes\n"
         "\n"
         "[V4+ Styles]\n"
@@ -323,8 +798,8 @@ def escribir_ass(clips, duraciones, ruta):
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, "
         "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
         "MarginL, MarginR, MarginV, Encoding\n"
-        "Style: Default,DejaVu Sans,34,&H00FFFFFF,&H000000FF,&H00000000,"
-        "&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,40,40,130,1\n"
+        f"Style: Default,DejaVu Sans,{fuente_px},&H00FFFFFF,&H000000FF,&H00000000,"
+        f"&H00000000,1,0,0,0,100,100,0,0,1,2,0,2,40,40,{margen_v},1\n"
         "\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
@@ -354,16 +829,17 @@ def cmd(args, check=True):
     return r
 
 
-def renderizar(imagenes, duraciones, wav_path, srt_path, salida):
+def renderizar(imagenes, duraciones, wav_path, srt_path, salida, ancho_px, alto_px):
     segs = []
     for i, (img, d) in enumerate(zip(imagenes, duraciones)):
         frames = max(1, int(round(d * 30)))
         seg = os.path.join(WORK, f"seg{i}.mp4")
         cmd([
             "ffmpeg", "-y", "-i", img, "-vf",
-            f"scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,"
+            f"scale={ancho_px}:{alto_px}:force_original_aspect_ratio=increase,"
+            f"crop={ancho_px}:{alto_px},"
             f"zoompan=z='1+0.12*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={frames}:s=720x1280:fps=30,format=yuv420p",
+            f"d={frames}:s={ancho_px}x{alto_px}:fps=30,format=yuv420p",
             "-frames:v", str(frames), "-c:v", "libx264", "-pix_fmt", "yuv420p",
             "-r", "30", seg,
         ])
@@ -404,43 +880,109 @@ def verificar_mp4(ruta):
     }
 
 
+# Formato: dimensiones, fuente de subtítulos, ancho de línea, margen vertical.
+FORMATOS = {
+    "vertical": {"w": 720, "h": 1280, "fuente": 34, "linea": 28, "margen_v": 130},
+    "horizontal": {"w": 1920, "h": 1080, "fuente": 44, "linea": 42, "margen_v": 100},
+}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tema", default="Seiko Astron")
     ap.add_argument("--duracion", type=float, default=35)
+    ap.add_argument("--formato", choices=["vertical", "horizontal"], default="vertical")
+    ap.add_argument("--musica", choices=["si", "no"], default="si")
     ap.add_argument("--outdir", default=OUT)
     args = ap.parse_args()
+    if args.formato not in FORMATOS:
+        ap.error("formato debe ser vertical u horizontal")
+    fmt = FORMATOS[args.formato]
+    n_clips = 5 if args.duracion <= 45 else 7
+    palabras_objetivo = int(round(args.duracion * PALABRAS_POR_SEGUNDO))
     os.makedirs(args.outdir, exist_ok=True)
     os.makedirs(WORK, exist_ok=True)
     t_total = time.time()
-    REPORT.update({"tema": args.tema, "duracion_objetivo_s": args.duracion})
+    REPORT.update({
+        "tema": args.tema,
+        "duracion_objetivo_s": args.duracion,
+        "formato": args.formato,
+        "dimensiones": f"{fmt['w']}x{fmt['h']}",
+        "clips_previstos": n_clips,
+        "palabras_objetivo": palabras_objetivo,
+        "musica_pedida": args.musica,
+    })
     try:
+        with fase("investigacion"):
+            datos, confirmados, info_inv = investigar(args.tema)
+            REPORT["investigacion"] = info_inv
+            print(f"datos verificados: {datos}", flush=True)
         with fase("guion"):
-            clips, fuente = generar_guion(args.tema)
+            clips, fuente = generar_guion(
+                args.tema, datos, confirmados, n_clips, palabras_objetivo,
+                info_inv.get("chips"))
             texto = " ".join(clips)
             REPORT["guion_fuente"] = fuente
             REPORT["guion_palabras"] = contar_palabras(texto)
             REPORT["guion_clips"] = len(clips)
             print(f"guion: {REPORT['guion_palabras']} palabras, {len(clips)} clips, fuente={fuente}", flush=True)
         with fase("imagenes"):
-            imagenes = bajar_imagenes()
+            imagenes = bajar_imagenes(n_clips, args.formato)
             REPORT["imagenes_ok"] = len(imagenes)
         wav_path = os.path.join(WORK, "voz.wav")
         with fase("voz"):
-            modelo, lang = generar_voz(texto, wav_path)
+            modelo, lang, dur_voz = generar_voz(texto, wav_path, args.duracion)
             REPORT["voz_modelo"] = modelo
             REPORT["voz_lang"] = lang
-            REPORT["voz_duracion_s"] = round(duracion_audio(wav_path), 2)
+            REPORT["voz_duracion_s"] = round(dur_voz, 2)
             print(f"voz: {REPORT['voz_duracion_s']} s, modelo={modelo}", flush=True)
+        audio_final = wav_path
+        if args.musica == "si":
+            with fase("musica"):
+                pista = obtener_musica()
+                if pista:
+                    mezcla = os.path.join(WORK, "mezcla.wav")
+                    try:
+                        dur_mezcla = mezclar_musica(
+                            wav_path, pista, mezcla, REPORT["voz_duracion_s"])
+                        audio_final = mezcla
+                        REPORT["musica"] = {
+                            "titulo": MUSICA_TITULO,
+                            "autor": MUSICA_AUTOR,
+                            "licencia": MUSICA_LICENCIA,
+                            "volumen": MUSICA_VOLUMEN,
+                            "duracion_s": round(dur_mezcla, 2),
+                        }
+                        print(f"música: {MUSICA_TITULO} ({MUSICA_AUTOR}, "
+                              f"{MUSICA_LICENCIA}), volumen {MUSICA_VOLUMEN}", flush=True)
+                    except Exception as e:
+                        # La música es opcional: sin ella el video sale solo
+                        # con voz; no se pierde el run por la música.
+                        print(f"música: mezcla falló ({e}), sigo solo con voz", flush=True)
+                        REPORT["musica"] = {"error": str(e)}
+                else:
+                    print("música: sin pista disponible, sigo solo con voz", flush=True)
+                    REPORT["musica"] = {"error": "pista no disponible"}
+        if audio_final == wav_path:
+            # Sin música: normalizar la voz a estéreo 48 kHz a nivel
+            # completo (si no, el render la baja ~3 dB al convertirla).
+            voz48 = os.path.join(WORK, "voz48.wav")
+            try:
+                normalizar_voz(wav_path, voz48)
+                audio_final = voz48
+            except Exception as e:
+                print(f"voz: normalización falló ({e}), sigo con la voz original", flush=True)
         with fase("render"):
             d_total = REPORT["voz_duracion_s"]
             chars = [len(c) for c in clips]
             duraciones = [d_total * c / sum(chars) for c in chars]
             REPORT["clip_duraciones_s"] = [round(d, 2) for d in duraciones]
             srt_path = os.path.join(WORK, "subs.ass")
-            escribir_ass(clips, duraciones, srt_path)
+            escribir_ass(clips, duraciones, srt_path,
+                         fmt["w"], fmt["h"], fmt["fuente"], fmt["linea"], fmt["margen_v"])
             salida = os.path.join(args.outdir, "video.mp4")
-            renderizar(imagenes, duraciones, wav_path, srt_path, salida)
+            renderizar(imagenes, duraciones, audio_final, srt_path, salida,
+                       fmt["w"], fmt["h"])
             REPORT["video"] = verificar_mp4(salida)
             print(f"video: {REPORT['video']}", flush=True)
         REPORT["tiempo_total_s"] = round(time.time() - t_total, 1)

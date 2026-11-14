@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0e0e10"/>
+  <rect x="10" y="10" width="492" height="492" rx="88" fill="none" stroke="#c9a227" stroke-width="6"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#c9a227" stroke-width="14"/>
+  <circle cx="256" cy="256" r="14" fill="#e8c85a"/>
+  <line x1="256" y1="256" x2="256" y2="150" stroke="#e8c85a" stroke-width="16" stroke-linecap="round"/>
+  <line x1="256" y1="256" x2="340" y2="300" stroke="#e8c85a" stroke-width="16" stroke-linecap="round"/>
+  <g stroke="#c9a227" stroke-width="10" stroke-linecap="round">
+    <line x1="256" y1="116" x2="256" y2="132"/>
+    <line x1="256" y1="380" x2="256" y2="396"/>
+    <line x1="116" y1="256" x2="132" y2="256"/>
+    <line x1="380" y1="256" x2="396" y2="256"/>
+  </g>
+  <text x="256" y="452" text-anchor="middle" font-family="Georgia, serif" font-size="44" fill="#c9a227" letter-spacing="6">VELTORA</text>
+</svg>
