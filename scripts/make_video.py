@@ -11,6 +11,10 @@ Reglas heredadas y verificadas (13-nov-2026):
 - Pollinations texto anónimo: 1 llamada de ~110 palabras da HTTP 400
   output_token_limit_exceeded; llamadas cortas (~50 palabras) con
   instrucción CORTA funcionan; sin "no inventes" el modelo inventa datos.
+- El mismo 400 lo dispara pedir "termina exactamente con..." junto con
+  datos (run #8, 14-nov-2026): datos+CTA da 400, datos sin CTA da 200,
+  CTA sin datos da 200. El CTA se añade al final del guion, no se pide
+  al modelo. El cuerpo del error HTTP se registra en el log.
 - Pollinations texto anónimo: límite por IP, 1 llamada a la vez y al menos
   30 s entre llamadas; al pasarlo devuelve HTTP 402 con cabecera
   Retry-After (fallo real 13-nov-2026, run #7: la 2ª llamada del guion
@@ -235,6 +239,36 @@ def pollinations_texto(url, timeout=40, max_intentos=6):
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
             _ultima_llamada_texto = time.time()
+            # Registrar el CUERPO del error: sin él el 400 del run #8 no
+            # se pudo diagnosticar (el log solo decía "HTTP Error 400").
+            # La lectura puede fallar con IncompleteRead si el servidor
+            # cierra la conexión: usar entonces los bytes parciales.
+            try:
+                cuerpo = e.read().decode("utf-8", "replace")
+            except BaseException as _e:
+                parcial = getattr(_e, "partial", b"") or b""
+                try:
+                    cuerpo = parcial.decode("utf-8", "replace")
+                except Exception:
+                    cuerpo = ""
+            if not cuerpo and e.code == 400:
+                # La lectura urllib del cuerpo a veces falla porque el
+                # servidor cierra la conexión (IncompleteRead con 0 bytes);
+                # un intento con curl suele entregar el cuerpo. Solo para
+                # 400 (diagnóstico): reemitir ante 402/429 gastaría cuota
+                # de ritmo. Es una sola llamada extra por error.
+                try:
+                    _r = subprocess.run(
+                        ["curl", "-s", "--max-time", "20",
+                         "-A", UA["User-Agent"], url],
+                        capture_output=True, text=True, errors="replace",
+                        timeout=25)
+                    if _r.stdout:
+                        cuerpo = _r.stdout
+                except Exception:
+                    pass
+            if cuerpo:
+                print(f"Pollinations texto: HTTP {e.code} cuerpo={cuerpo[:300]!r}", flush=True)
             if e.code in (402, 429) and i < max_intentos - 1:
                 espera = _espera_retry_after(e.headers, espera_base)
                 espera_base = min(espera_base * 2, 120)
@@ -615,7 +649,13 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
     (verificado 13-nov-2026); cada llamada pide ~50 palabras con instrucción
     CORTA: la instrucción larga daba 400 incluso pidiendo 40 palabras.
     Sin "no inventes", el modelo inventa datos. El último párrafo termina
-    con el CTA exacto. Cada llamada recibe SOLO su parte de los datos:
+    con el CTA exacto, pero el CTA NO se pide al modelo: pedir "termina
+    exactamente con..." junto con los datos agota el límite de tokens de
+    salida del modelo gratuito (HTTP 400 output_token_limit_exceeded,
+    verificado 14-nov-2026, run #8: la llamada 2 falló con datos+CTA y
+    pasó sin el CTA, y también pasó con CTA pero sin datos). El CTA se
+    añade al final del último párrafo y la validación lo comprueba igual.
+    Cada llamada recibe SOLO su parte de los datos:
     con los mismos datos en todas, la segunda llamada repetía la primera
     (verificado 13-nov-2026, Daytona)."""
     claves = palabras_clave_tema(tema)
@@ -628,15 +668,18 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
         n_parrafos.append(reparto + (1 if i < resto else 0))
     # Reparto de datos entre llamadas: grupos contiguos de chips.
     grupos_datos = []
+    grupos_chips = []
     if chips:
         por_grupo, resto_c = divmod(len(chips), n_llamadas)
         idx = 0
         for i in range(n_llamadas):
             n = por_grupo + (1 if i < resto_c else 0)
+            grupos_chips.append(chips[idx:idx + n])
             grupos_datos.append(", ".join(chips[idx:idx + n]) if n else datos)
             idx += n
     else:
         grupos_datos = [datos] * n_llamadas
+        grupos_chips = [[] for _ in range(n_llamadas)]
     print(f"guion: {palabras_objetivo} palabras objetivo, {n_llamadas} llamadas, "
           f"reparto de párrafos {n_parrafos}, claves={claves}", flush=True)
     partes = []
@@ -649,8 +692,6 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
         )
         if i == 0:
             base += "Primer párrafo: gancho con el dato más sorprendente. "
-        if i == n_llamadas - 1:
-            base += f"Último párrafo termina exactamente con: {CTA} "
         base += "Solo el guion."
         # Tres variantes por llamada: la pedida, una más corta y una aún más
         # corta sin la frase de redacción (por si el 400 viene del largo del
@@ -662,6 +703,14 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
             (base.replace(f"unas {palabras} palabras", "unas 30 palabras").replace(
                 "Redacta con tus palabras. ", ""), 30),
         ]
+        if i == n_llamadas - 1:
+            # Último intento con prompt mínimo (un solo chip): por si el
+            # 400 persiste con los datos (run #8).
+            mini_datos = grupos_chips[i][0] if grupos_chips[i] else tema
+            variantes.append((
+                f"Guion en español, {n_par} párrafos cortos, unas 30 palabras, "
+                f"sobre {tema}. Datos: {mini_datos} Usa solo estos datos, "
+                "no inventes otros. Solo el guion.", 30))
         parte = None
         for j, (p, objetivo) in enumerate(variantes):
             parte = _llamada_guion(
@@ -676,6 +725,10 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
             raise RuntimeError(f"guion: la llamada {i + 1} a Pollinations falló")
         partes.append(parte)
     clips = [p for paras, _ in partes for p in paras]
+    # El CTA se añade aquí (no se pide al modelo: ver docstring). Si el
+    # modelo ya terminó con él, no se duplica.
+    if not clips[-1].rstrip().rstrip(".").endswith(CTA.rstrip(".")):
+        clips[-1] = clips[-1].rstrip() + " " + CTA
     texto = " ".join(clips)
     total = contar_palabras(texto)
     bajo = texto.lower()
