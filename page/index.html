@@ -204,7 +204,10 @@ async function listarRuns() {
   const lista = $("lista");
   lista.innerHTML = "<p class='ayuda'>Cargando…</p>";
   try {
-    const data = await api("/actions/runs?per_page=10");
+    // Solo runs del workflow test-video: los runs de publish-page y
+    // pages-build-deployment salían en la lista como entradas "Video"
+    // fantasma (14-nov-2026) y volvían con cada publicación.
+    const data = await api("/actions/workflows/test-video.yml/runs?per_page=10");
     const mapa = getMapa();
     if (!data.workflow_runs || !data.workflow_runs.length) {
       lista.innerHTML = "<p class='ayuda'>Aún no hay videos. Lanza el primero arriba.</p>";

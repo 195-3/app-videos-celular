@@ -42,6 +42,22 @@ if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
   if [ -d "$TMP/old/videos" ]; then
     cp "$TMP/old/videos/"*.mp4 "$TMP/new/videos/" 2>/dev/null || true
     echo "videos anteriores recuperados: $(ls "$TMP/new/videos" 2>/dev/null | wc -l)"
+    # No republicar videos cuyo run fue borrado en la app: borrar el run
+    # tiene que significar que el video desaparece de verdad (14-nov-2026).
+    # Solo se elimina con 404 confirmado; cualquier otra respuesta (403,
+    # error de red) conserva el archivo para no borrar por un fallo de la API.
+    for f in "$TMP/new/videos/"*.mp4; do
+      [ -e "$f" ] || continue
+      id="$(basename "$f" .mp4)"
+      code="$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "Authorization: Bearer $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$id" || true)"
+      if [ "$code" = "404" ]; then
+        echo "video $id.mp4: run borrado en la app, no se republica"
+        rm -f "$f"
+      fi
+    done
   fi
 fi
 
