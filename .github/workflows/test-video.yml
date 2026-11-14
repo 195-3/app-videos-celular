@@ -34,6 +34,10 @@ on:
         description: "Modo curar + otro-tema: tema del video nuevo"
         required: false
         default: ""
+        transcripcion_pegada:
+        description: "Modo curar: transcripción pegada del video (opcional)"
+        required: false
+        default: ""
       duracion:
         description: "Duración objetivo en segundos (30, 35, 45 o 60)"
         required: false
@@ -96,8 +100,7 @@ jobs:
       - name: Generar video
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}" --formato "${{ inputs.formato }}" --musica "${{ inputs.musica }}" --modo "${{ inputs.modo }}" --video-url "${{ inputs.video_url }}" --variante "${{ inputs.variante }}" --tema-nuevo "${{ inputs.tema_nuevo }}"
-
+        run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}" --formato "${{ inputs.formato }}" --musica "${{ inputs.musica }}" --modo "${{ inputs.modo }}" --video-url "${{ inputs.video_url }}" --variante "${{ inputs.variante }}" --tema-nuevo "${{ inputs.tema_nuevo }}" --transcripcion-pegada "${{ inputs.transcripcion_pegada }}"
       - name: Verificar MP4
         run: |
           ffprobe -v error -show_entries format=duration,size \
