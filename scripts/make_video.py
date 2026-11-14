@@ -739,6 +739,40 @@ def obtener_transcripcion(video_id, url=None):
     raise RuntimeError("sin transcripción del video (" + "; ".join(errores) + ")")
 
 
+def obtener_metadatos_yt_api(video_id):
+    """Título, descripción y vistas vía YouTube Data API v3 (llave gratis
+    de Google, sin tarjeta). Es la vía que NO bloquea YouTube: la API
+    oficial no sufre el 'Sign in to confirm you're not a bot' que
+    bloquea todos los clientes de yt-dlp desde las IPs de GitHub
+    (runs #10, #11 y #12, 14-nov-2026). La llave vive como secreto del
+    repo (YOUTUBE_API_KEY); sin ella, devuelve None y se usan los
+    clientes de yt-dlp."""
+    llave = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not llave:
+        return None
+    try:
+        url = ("https://www.googleapis.com/youtube/v3/videos"
+               f"?part=snippet,statistics&id={video_id}&key={llave}")
+        status, body = http_get(url, timeout=20)
+        d = json.loads(body.decode("utf-8", "replace"))
+        items = d.get("items") or []
+        if not items:
+            print("curar: API YouTube sin items para el video", flush=True)
+            return None
+        sn = items[0].get("snippet") or {}
+        st = items[0].get("statistics") or {}
+        print("curar: metadatos vía API de YouTube", flush=True)
+        return {
+            "titulo": sn.get("title", "") or "",
+            "descripcion": sn.get("description", "") or "",
+            "vistas": int(st["viewCount"]) if st.get("viewCount") else None,
+            "autor": sn.get("channelTitle", "") or "",
+        }
+    except Exception as e:
+        print(f"curar: API de YouTube falló: {e}", flush=True)
+        return None
+
+
 def obtener_metadatos_yt(video_id, url):
     """Título, descripción y vistas del video. yt-dlp con cliente
     android/ios primero (el cliente web es el que YouTube bloquea en IPs
@@ -746,6 +780,9 @@ def obtener_metadatos_yt(video_id, url):
     YouTube para el título (sin llave). Los campos que no se consiguen
     quedan vacíos; no es un fallo del run."""
     meta = {"titulo": "", "descripcion": "", "vistas": None, "autor": ""}
+    por_api = obtener_metadatos_yt_api(video_id)
+    if por_api:
+        return por_api
     for cliente in ("android", "ios", "tv", "web_embedded", None):
         args = ["yt-dlp", "--dump-json", "--no-download", "--no-warnings",
                 "--no-playlist"]
