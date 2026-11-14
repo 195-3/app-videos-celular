@@ -111,7 +111,7 @@
     </div>
     <label for="transcripcion_pegada">Lo que dice el video (transcripción, opcional)</label>
     <textarea id="transcripcion_pegada" placeholder="Pega aquí lo que dice el video..." autocomplete="off"></textarea>
-    <p class="ayuda">En la app de YouTube: abre el video → descripción → "Mostrar transcripción" → copiar. Sin esto, la app intenta leerlo sola y YouTube a veces la bloquea.</p>
+    <p class="ayuda">Pega aquí lo que dice el video, completo si puedes. La app de YouTube no deja copiarlo: usa youtubetotranscript.com o pídeme la transcripción en el chat y te la paso. Sin esto, la app intenta leerlo sola y YouTube a veces la bloquea.</p>
     <p class="ayuda">La app lee lo que dice el video, saca por qué funcionó (gancho, final) y hace uno nuevo con esa receta, sin copiarlo.</p>
   </div>
   <div id="campo-tema">
@@ -311,7 +311,7 @@ $("btn-lanzar").addEventListener("click", async () => {
   const videoUrl = $("video_url").value.trim();
   const variante = $("variante").value;
   const temaNuevo = $("tema_nuevo").value.trim();
-  const transcripcionPegada = $("transcripcion_pegada").value.trim().slice(0, 4000);
+  const transcripcionPegada = $("transcripcion_pegada").value.trim().slice(0, 8000);
   if (modo === "tema" && !tema) { alert("Escribe el tema del video."); $("tema").focus(); return; }
   if (modo === "curar" && !videoUrl) { alert("Pega el enlace de YouTube del video viral."); $("video_url").focus(); return; }
   if (modo === "curar" && !/youtu\.?be/.test(videoUrl)) { alert("Ese enlace no parece de YouTube."); $("video_url").focus(); return; }

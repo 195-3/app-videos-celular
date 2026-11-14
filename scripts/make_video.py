@@ -99,13 +99,17 @@ STOPWORDS = {
 # bloquea en Pollinations, verificado 13-nov-2026). 5 clips para <=45 s,
 # 7 clips para 60 s.
 PROMPTS_IMAGEN = [
-    "Macro close-up of a luxury mechanical chronograph wristwatch dial, dark background, dramatic studio lighting, photorealistic",
-    "Tiny watch movement gears and balance wheel, macro photography, gold and steel components, dark background",
-    "Luxury watch auction room, elegant bidders and display case, cinematic warm light, photorealistic",
-    "Vintage race track at sunset, classic sports cars, cinematic golden light, photorealistic",
-    "Elegant luxury wristwatch on a man's wrist, dark suit cuff, cinematic light, photorealistic",
-    "Close-up of a chronograph subdial with vintage patina, textured dial, studio photography, dark background",
-    "Collection of vintage luxury wristwatches in a dark wooden box, warm light, photorealistic",
+    # Todas de relojes, todas con luz clara. La lista anterior tenía una
+    # de carros de carrera al atardecer y casi todas pedían fondo oscuro:
+    # el video curado #16 (14-nov-2026) salió con carros mientras la voz
+    # hablaba de relojes y con todas las escenas oscuras (brillo 59-88).
+    "Macro close-up of a luxury mechanical chronograph wristwatch dial, bright studio lighting, light grey background, photorealistic",
+    "Luxury gold wristwatch with black leather strap on a white marble surface, bright daylight, photorealistic",
+    "Elegant silver dress watch clearly visible on a man's wrist, light blue shirt cuff, close-up on the watch, bright daylight, photorealistic",
+    "Row of colorful luxury wristwatches displayed on a bright white showroom shelf, white background, bright even lighting, photorealistic",
+    "Close-up of a vintage chronograph subdial with patina, bright studio photography, light background, photorealistic",
+    "Tiny watch movement gears and balance wheel, macro photography, gold and steel components, bright lighting, photorealistic",
+    "Luxury wristwatch collection in an open light wooden display box, bright warm daylight, photorealistic",
 ]
 
 
@@ -655,6 +659,23 @@ def _limpiar_transcripcion(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
+def _trozos_transcripcion(texto, palabras=28):
+    """Parte la transcripción en trozos de ~28 palabras. La automática
+    casi no tiene puntuación (el Top 10 de 6917 chars tiene 1 solo punto):
+    sin esto `_frases_con_datos` no saca ninguna frase, porque parte por
+    [.!?] y el texto entero es una sola frase que se descarta por larga.
+    Los trozos son la unidad de la que salen los chips del guion en modo
+    curar: el video describe los relojes uno por uno y esos datos solo
+    están en la transcripción."""
+    lista = (texto or "").split()
+    trozos = []
+    for i in range(0, len(lista), palabras):
+        trozo = " ".join(lista[i:i + palabras]).strip()
+        if len(trozo) >= 25:
+            trozos.append(trozo)
+    return trozos
+
+
 def _texto_desde_vtt(ruta):
     """Texto plano de un .vtt de subtítulos: quita cabecera, tiempos,
     etiquetas y líneas repetidas (los automáticos repiten cada frase)."""
@@ -941,12 +962,12 @@ def analizar_viral(titulo, transcripcion, descripcion):
     por reglas (primera y última frase): es débil pero no pierde el run.
     La transcripción de muchos videos es sobre todo música y ruido: se
     combina con la descripción, que suele traer el contenido real."""
-    texto = ((transcripcion or "") + "\n" + (descripcion or ""))[:4000]
+    texto = ((transcripcion or "") + "\n" + (descripcion or ""))[:8000]
     variantes = [
         ("Analiza este video en 5 líneas cortas. GANCHO: cómo empieza. "
          "ESTRUCTURA: cómo sigue. CTA: cómo termina. CAMBIO: qué cambiarías. "
          f"TEMA: el reloj o modelo, en 2-4 palabras. Video: {titulo}. "
-         f"Texto: {texto[:2500]}"),
+         f"Texto: {texto[:6000]}"),
         ("En 5 líneas: GANCHO, ESTRUCTURA, CTA, CAMBIO, TEMA. "
          f"Video: {titulo}. Texto: {texto[:1200]}"),
     ]
@@ -1124,8 +1145,14 @@ def generar_guion(tema, datos, confirmados, n_clips, palabras_objetivo, chips=No
                 f"no inventes otros. {linea_cifras}Solo el guion.", 30))
         parte = None
         for j, (p, objetivo) in enumerate(variantes):
+            # Las claves del tema solo se exigen en la primera llamada (el
+            # gancho): los párrafos del cuerpo hablan de los datos y no
+            # tienen por qué repetir "top/increíbles/querrás" (fallo
+            # 14-nov-2026: la llamada 2 devolvía 44 palabras en 2 párrafos
+            # correctos y se rechazaba solo por no traer clave).
             parte = _llamada_guion(
-                p, n_par, max(20, objetivo - 12), objetivo + 15, claves)
+                p, n_par, max(20, objetivo - 12), objetivo + 15,
+                claves if i == 0 else [])
             if parte:
                 break
             if j < len(variantes) - 1:
@@ -1552,6 +1579,7 @@ def main():
     try:
         tema_efectivo = args.tema
         gancho_estilo = cierre_estilo = None
+        chips_tr = []
         investigacion_hecha = False
         if args.modo == "curar":
             REPORT["variante"] = args.variante
@@ -1579,31 +1607,70 @@ def main():
                     candidatos = [args.tema_nuevo]
                 REPORT["curar"]["candidatos_tema"] = candidatos
                 print(f"curar: candidatos de tema {candidatos}", flush=True)
+                # Los datos del guion salen de la transcripción misma: el
+                # video describe 10 relojes uno por uno y Wikipedia no sabe
+                # cuáles son. Se calculan ANTES de investigar: si hay
+                # bastantes, la investigación no hace falta y su basura no
+                # entra al guion. Sin esto el guion se armaba con datos
+                # genéricos y el modelo inventaba la prosa ("Plastic
+                # Hearts", "transformar tu hogar", run #16, 14-nov-2026).
+                # La causa real del "Plastic Hearts": investigar("Top 10
+                # Increíbles Querrás Tener Ya TOPS") devolvió el artículo
+                # de Miley Cyrus y sus frases entraron como datos del guion
+                # (prueba local 14-nov-2026: datos con "Plastic Hearts
+                # (2020)" y "Aparato para cortar las sandías").
+                trozos_tr = _trozos_transcripcion(transcripcion)
+                frases_tr = _frases_con_datos(". ".join(trozos_tr),
+                                              ("reloj", "relojes"))
+                chips_tr = _chips_de_frases(
+                    frases_tr, [], ["reloj", "relojes"], [],
+                    exigir_confirmado=False)[:6]
+                REPORT["curar"]["chips_transcripcion"] = len(chips_tr)
+                print(f"curar: transcripción {len(transcripcion)} chars -> "
+                      f"{len(trozos_tr)} trozos, {len(chips_tr)} chips: "
+                      f"{chips_tr}", flush=True)
                 tema_efectivo = None
-                for cand in candidatos:
-                    try:
-                        datos, confirmados, info_inv = investigar(cand)
-                        tema_efectivo = cand
-                        break
-                    except Exception as e:
-                        print(f"curar: investigar('{cand}') falló: {e}",
-                              flush=True)
-                if tema_efectivo is None:
-                    raise RuntimeError(
-                        "curar: no se encontraron datos verificados del "
-                        "tema del video")
+                if len(chips_tr) >= 2:
+                    # La transcripción manda: tema = etiqueta del título,
+                    # datos = los chips, sin Wikipedia ni DDG.
+                    tema_efectivo = candidatos[0] if candidatos else tema_titulo
+                    datos = ", ".join(chips_tr)[:280]
+                    confirmados = []
+                    info_inv = {"tema": tema_efectivo,
+                                "fuente_datos": "transcripcion",
+                                "datos": datos, "chips": chips_tr,
+                                "numeros_confirmados": []}
+                    print(f"curar: sin investigar, datos de la "
+                          f"transcripción ({len(chips_tr)} chips)", flush=True)
+                else:
+                    for cand in candidatos:
+                        try:
+                            datos, confirmados, info_inv = investigar(cand)
+                            tema_efectivo = cand
+                            break
+                        except Exception as e:
+                            print(f"curar: investigar('{cand}') falló: {e}",
+                                  flush=True)
+                    if tema_efectivo is None:
+                        raise RuntimeError(
+                            "curar: no se encontraron datos verificados del "
+                            "tema del video")
                 REPORT["tema"] = tema_efectivo
                 REPORT["investigacion"] = info_inv
                 print(f"curar: tema efectivo '{tema_efectivo}'", flush=True)
                 print(f"datos verificados: {datos}", flush=True)
-                # La fase de investigación ya se hizo aquí: se marca para
-                # no repetirla abajo.
+                # La fase de investigación ya se hizo aquí (o se saltó por
+                # la transcripción): se marca para no repetirla abajo.
                 investigacion_hecha = True
         if not investigacion_hecha:
             with fase("investigacion"):
                 datos, confirmados, info_inv = investigar(tema_efectivo)
                 REPORT["investigacion"] = info_inv
                 print(f"datos verificados: {datos}", flush=True)
+        # En curar con transcripción, info_inv["chips"] ya son los de la
+        # transcripción; sin ella, los de Wikipedia. Sin mezclar: la
+        # mezcla metía la basura de investigar en el guion (Miley Cyrus).
+        chips_guion = info_inv.get("chips")
         with fase("guion"):
             texto_extra = (
                 (meta.get("titulo", "") + " " + meta.get("descripcion", ""))
@@ -1611,7 +1678,7 @@ def main():
             try:
                 clips, fuente = generar_guion(
                     tema_efectivo, datos, confirmados, n_clips, palabras_objetivo,
-                    info_inv.get("chips"), gancho_estilo, cierre_estilo,
+                    chips_guion, gancho_estilo, cierre_estilo,
                     texto_extra)
             except RuntimeError as e:
                 if "números no verificados" not in str(e):
@@ -1623,7 +1690,7 @@ def main():
                       flush=True)
                 clips, fuente = generar_guion(
                     tema_efectivo, datos, confirmados, n_clips, palabras_objetivo,
-                    info_inv.get("chips"), gancho_estilo, cierre_estilo,
+                    chips_guion, gancho_estilo, cierre_estilo,
                     texto_extra)
             texto = " ".join(clips)
             REPORT["guion_fuente"] = fuente
