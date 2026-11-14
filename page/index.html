@@ -29,9 +29,10 @@
             border-radius: 14px; padding: 16px; margin-top: 14px; }
   h2 { margin: 0 0 10px; font-size: 18px; }
   label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 15px; }
-  input[type=text], input[type=password], select {
+  input[type=text], input[type=password], select, textarea {
     width: 100%; padding: 13px 12px; font-size: 17px; border-radius: 10px;
     border: 1px solid var(--borde); background: #101013; color: var(--texto); }
+  textarea { min-height: 110px; resize: vertical; font-family: inherit; }
   .fila { display: flex; gap: 10px; }
   .fila > div { flex: 1; }
   button { width: 100%; padding: 14px; margin-top: 14px; font-size: 18px; font-weight: 700;
@@ -108,6 +109,9 @@
       <label for="tema_nuevo">Tema del video nuevo</label>
       <input type="text" id="tema_nuevo" placeholder="Ej: Patek Philippe Nautilus" autocomplete="off">
     </div>
+    <label for="transcripcion_pegada">Lo que dice el video (transcripción, opcional)</label>
+    <textarea id="transcripcion_pegada" placeholder="Pega aquí lo que dice el video..." autocomplete="off"></textarea>
+    <p class="ayuda">En la app de YouTube: abre el video → descripción → "Mostrar transcripción" → copiar. Sin esto, la app intenta leerlo sola y YouTube a veces la bloquea.</p>
     <p class="ayuda">La app lee lo que dice el video, saca por qué funcionó (gancho, final) y hace uno nuevo con esa receta, sin copiarlo.</p>
   </div>
   <div id="campo-tema">
@@ -306,6 +310,7 @@ $("btn-lanzar").addEventListener("click", async () => {
   const videoUrl = $("video_url").value.trim();
   const variante = $("variante").value;
   const temaNuevo = $("tema_nuevo").value.trim();
+  const transcripcionPegada = $("transcripcion_pegada").value.trim().slice(0, 4000);
   if (modo === "tema" && !tema) { alert("Escribe el tema del video."); $("tema").focus(); return; }
   if (modo === "curar" && !videoUrl) { alert("Pega el enlace de YouTube del video viral."); $("video_url").focus(); return; }
   if (modo === "curar" && !/youtu\.?be/.test(videoUrl)) { alert("Ese enlace no parece de YouTube."); $("video_url").focus(); return; }
@@ -318,7 +323,7 @@ $("btn-lanzar").addEventListener("click", async () => {
   try {
     const antes = Date.now();
     await api("/actions/workflows/" + WF + "/dispatches", "POST",
-      { ref: "main", inputs: { tema: tema || temaNuevo || "Video curado", duracion: String(duracion), formato: formato, musica: musica, modo: modo, video_url: videoUrl, variante: variante, tema_nuevo: temaNuevo } });
+      { ref: "main", inputs: { tema: tema || temaNuevo || "Video curado", duracion: String(duracion), formato: formato, musica: musica, modo: modo, video_url: videoUrl, variante: variante, tema_nuevo: temaNuevo, transcripcion_pegada: transcripcionPegada } });
     mostrarMsg("Lanzado. Buscando el run… (tarda unos segundos)", "ok");
     // El dispatch no devuelve el id: se busca el run nuevo por fecha.
     let runId = null;

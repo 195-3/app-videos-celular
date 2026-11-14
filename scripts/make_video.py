@@ -815,20 +815,30 @@ def obtener_metadatos_yt(video_id, url):
     return meta
 
 
-def curar_fuente(video_url):
-    """Fuente del video viral: metadatos + transcripción. Falla si no hay
-    contenido con el que trabajar (sin transcripción y sin descripción
-    suficiente no hay análisis posible)."""
+def curar_fuente(video_url, transcripcion_pegada=""):
+    """Fuente del video viral: metadatos + transcripción. Si el usuario
+    pegó la transcripción (la app de YouTube la muestra en la descripción
+    del video), se usa tal cual: YouTube bloquea la lectura desde las IPs
+    de GitHub (runs #10, #11 y #12) y la pegada es la vía que funciona
+    desde el teléfono, sin llave ni PC. Si no hay pegada, se intenta
+    sacarla (transcript-api, yt-dlp). Falla si no hay contenido con el
+    que trabajar (sin transcripción y sin descripción suficiente no hay
+    análisis posible)."""
     video_id = extraer_video_id(video_url)
     if not video_id:
         raise RuntimeError("enlace de YouTube no válido (no se encontró el ID del video)")
     meta = obtener_metadatos_yt(video_id, video_url)
-    transcripcion = ""
-    try:
-        transcripcion = _limpiar_transcripcion(
-            obtener_transcripcion(video_id, video_url))
-    except Exception as e:
-        print(f"curar: {e}", flush=True)
+    transcripcion = _limpiar_transcripcion(transcripcion_pegada or "")
+    if len(transcripcion) >= 200:
+        print(f"curar: transcripción pegada por el usuario "
+              f"({len(transcripcion)} chars)", flush=True)
+    else:
+        transcripcion = ""
+        try:
+            transcripcion = _limpiar_transcripcion(
+                obtener_transcripcion(video_id, video_url))
+        except Exception as e:
+            print(f"curar: {e}", flush=True)
     texto_util = (transcripcion + " " + meta.get("descripcion", "")).strip()
     if len(texto_util) < 200:
         raise RuntimeError(
@@ -1467,6 +1477,7 @@ def main():
     ap.add_argument("--video-url", default="")
     ap.add_argument("--variante", choices=["mismo-tema", "otro-tema"], default="mismo-tema")
     ap.add_argument("--tema-nuevo", default="")
+    ap.add_argument("--transcripcion-pegada", default="")
     ap.add_argument("--outdir", default=OUT)
     args = ap.parse_args()
     if args.modo == "curar" and not args.video_url:
@@ -1498,7 +1509,8 @@ def main():
         if args.modo == "curar":
             REPORT["variante"] = args.variante
             with fase("curar-fuente"):
-                meta, transcripcion, info_curar = curar_fuente(args.video_url)
+                meta, transcripcion, info_curar = curar_fuente(
+                    args.video_url, args.transcripcion_pegada)
                 REPORT["curar"] = info_curar
             with fase("curar-analisis"):
                 analisis = analizar_viral(
