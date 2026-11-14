@@ -10,6 +10,30 @@ on:
         description: "Tema del video"
         required: true
         default: "Grandmaster Chime Patek Philippe"
+      modo:
+        description: "Modo: tema (video desde un tema) o curar (rehacer un video viral)"
+        required: false
+        default: "tema"
+        type: choice
+        options:
+          - tema
+          - curar
+      video_url:
+        description: "Modo curar: enlace de YouTube del video viral"
+        required: false
+        default: ""
+      variante:
+        description: "Modo curar: mismo-tema (cambia cosas) u otro-tema (misma fórmula, otro tema)"
+        required: false
+        default: "mismo-tema"
+        type: choice
+        options:
+          - mismo-tema
+          - otro-tema
+      tema_nuevo:
+        description: "Modo curar + otro-tema: tema del video nuevo"
+        required: false
+        default: ""
       duracion:
         description: "Duración objetivo en segundos (30, 35, 45 o 60)"
         required: false
@@ -67,10 +91,10 @@ jobs:
       - name: Dependencias Python
         run: |
           python -m pip install -q --upgrade pip
-          pip install -q kokoro-onnx soundfile requests numpy
+          pip install -q kokoro-onnx soundfile requests numpy youtube-transcript-api yt-dlp
 
       - name: Generar video
-        run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}" --formato "${{ inputs.formato }}" --musica "${{ inputs.musica }}"
+        run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}" --formato "${{ inputs.formato }}" --musica "${{ inputs.musica }}" --modo "${{ inputs.modo }}" --video-url "${{ inputs.video_url }}" --variante "${{ inputs.variante }}" --tema-nuevo "${{ inputs.tema_nuevo }}"
 
       - name: Verificar MP4
         run: |
@@ -113,7 +137,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DUR=$(python3 -c "import json; print(json.load(open('out/report.json'))['video']['duracion_s'])")
-          bash scripts/publish_pages.sh out/video.mp4 "${{ github.run_id }}" "${{ inputs.tema }}" "${{ inputs.formato }}" "$DUR"
+          TEMA=$(python3 -c "import json; print(json.load(open('out/report.json'))['tema'])")
+          bash scripts/publish_pages.sh out/video.mp4 "${{ github.run_id }}" "$TEMA" "${{ inputs.formato }}" "$DUR"
 
       - name: Marcar fin
         run: |
