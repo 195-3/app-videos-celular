@@ -1,25 +1,25 @@
 {
   "fases": {
     "curar-fuente": {
-      "segundos": 7.0
+      "segundos": 6.5
     },
     "curar-analisis": {
-      "segundos": 1.9
+      "segundos": 87.5
     },
     "guion": {
-      "segundos": 267.0
+      "segundos": 286.7
     },
     "imagenes": {
-      "segundos": 2.6
+      "segundos": 3.7
     },
     "voz": {
-      "segundos": 20.1
+      "segundos": 25.5
     },
     "musica": {
       "segundos": 0.1
     },
     "render": {
-      "segundos": 45.7
+      "segundos": 45.6
     }
   },
   "exito": true,
@@ -38,75 +38,72 @@
     "titulo": "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS",
     "autor": "FULL TOP'S",
     "vistas": null,
-    "transcripcion_chars": 3991,
+    "transcripcion_chars": 3999,
     "descripcion_chars": 0,
-    "gancho": "El video arranca con un flash de los relojes más",
-    "estructura": "Cada hora se presenta en orden descendente con close‑ups, números y la voz describiendo óxido, cámara, GPS o diseño de motor, manteniendo ritmo y ritmo visual constante.",
-    "cambio": "Añadir un toque de personalidad al narrador, mezclar humor o historias personales sobre relojes y evitar la saturación de datos técnicos para no abrumar al espectador.",
-    "tema": "Relojes de Alta Tecnología",
-    "cierre": "Al final se anima a suscribirse, comentar “Cuál es tu",
-    "fuente": "pollinations-v1",
+    "gancho": "número 10 lote m 05 la ferrari diseñado en conjunto",
+    "estructura": "datos y historia del reloj",
+    "cierre": "número 10 lote m 05 la ferrari diseñado en conjunto",
+    "cambio": "mismo tema con otros ejemplos",
+    "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
+    "fuente": "reglas",
     "candidatos_tema": [
-      "Top 10 Increíbles Querrás Tener Ya TOPS",
-      "Relojes de Alta Tecnología"
-    ]
+      "Top 10 Increíbles Querrás Tener Ya TOPS"
+    ],
+    "chips_transcripcion": 4
   },
   "investigacion": {
     "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
-    "articulo_wiki": "Miley Cyrus",
-    "frases_wiki": 34,
-    "resultados_ddg": 10,
-    "numeros_confirmados": [],
-    "fuente_datos": "wikipedia-es",
-    "datos": "Posteriormente, la artista decidió fusionar sus inicios y aventurarse en el rock y el glam rock con Plastic Hearts (2020), Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS ¿ERES CURIOSO?, Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPSNo te olvides de dejar",
+    "fuente_datos": "transcripcion",
+    "datos": "número 10 lote m 05 la ferrari diseñado en conjunto por ferrari y la empresa de relojes hublot su diseño recuerda a otros de esta casa sin embargo, más precisos del mundo con una variación de más o menos 15 segundos al mes es el único reloj totalmente solar que además posee un si",
     "chips": [
-      "Posteriormente, la artista decidió fusionar sus inicios y aventurarse en el rock y el glam rock con Plastic Hearts (2020)",
-      "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS ¿ERES CURIOSO?",
-      "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPSNo te olvides de dejar tu comentario con cual de todos los caso te ha parecido mas sorprendente",
-      "These are made from 1\" thick Poplar for the table tops"
-    ]
+      "número 10 lote m 05 la ferrari diseñado en conjunto por ferrari y la empresa de relojes hublot su diseño recuerda a otros de esta casa sin embargo",
+      "más precisos del mundo con una variación de más o menos 15 segundos al mes es el único reloj totalmente solar que además posee un sistema de posicionamiento",
+      "samsung para ser un gadget de su línea galaxy este reloj cuenta con una pantalla totalmente a color y táctil de 16 pulgadas el dispositivo además de dar",
+      "6 fósforo y aunque lo parezca este no es otro de los tantos relojes inteligentes que saturan hoy en día el mercado su diseño está basado en tecnología"
+    ],
+    "numeros_confirmados": []
   },
   "guion_llamadas": [
+    43,
     44,
-    41,
-    44
+    39
   ],
   "guion_fuente": "pollinations",
-  "guion_palabras": 137,
+  "guion_palabras": 134,
   "guion_clips": 7,
   "imagenes_ok": 7,
-  "voz_modelo": "int8",
+  "voz_modelo": "fish:locutor-k",
   "voz_lang": "es",
-  "voz_duracion_s": 48.36,
+  "voz_duracion_s": 51.39,
   "musica": {
     "titulo": "Lovely Piano Song",
     "autor": "Kevin MacLeod",
     "licencia": "CC0 1.0 Universal (dominio público)",
     "volumen": 0.2,
-    "duracion_s": 48.36
+    "duracion_s": 51.39
   },
   "clip_duraciones_s": [
-    3.6,
-    6.61,
-    4.15,
-    8.35,
-    6.79,
-    8.95,
-    9.91
+    4.7,
+    5.93,
+    6.39,
+    7.3,
+    9.46,
+    12.2,
+    5.41
   ],
   "video": {
-    "duracion_s": 48.36,
-    "mb": 8.27,
+    "duracion_s": 51.39,
+    "mb": 8.11,
     "width": 1920,
     "height": 1080,
     "video_codec": "h264",
     "tiene_audio": true,
     "audio_codec": "aac"
   },
-  "tiempo_total_s": 344.5,
+  "tiempo_total_s": 455.5,
   "workflow": {
-    "run_id": "43619157471",
-    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43619157471",
-    "tiempo_wall_s": 379.5
+    "run_id": "43628586739",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43628586739",
+    "tiempo_wall_s": 499.1
   }
 }
