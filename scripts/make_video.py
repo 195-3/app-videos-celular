@@ -79,6 +79,16 @@ MUSICA_URLS = [
 ]
 MUSICA_VOLUMEN = 0.2  # ~-14 dB: audible por debajo de la voz, sin taparla
 
+# Voces Fish Audio (decisión del usuario 14-nov-2026): locutor k primero,
+# Valentino Narración Bíblica de reserva. IDs = último segmento de la URL
+# fish.audio/m/<id>. Modelo s2.1-pro-free (gratis hasta 30-nov-2026 según
+# Fish; plan gratis = uso personal, sin derechos comerciales completos).
+# La llave va en la variable FISH_AUDIO_API_KEY (secreto del repo); sin
+# ella, o si Fish falla, la voz sigue siendo Kokoro Santa.
+VOZ_FISH_MODELO = "s2.1-pro-free"
+VOZ_FISH_LOCUTOR_K = "3f45a7fd7a614655a61eb7027b955783"
+VOZ_FISH_VALENTINO = "8d2c17a9b26d4d83888ea67a1ee565b2"
+
 STOPWORDS = {
     "el", "la", "los", "las", "de", "del", "un", "una", "unos", "unas",
     "en", "y", "con", "por", "para", "su", "sus", "más", "mas", "que",
@@ -1225,9 +1235,46 @@ def bajar_modelo_kokoro():
         yield nombre, ruta, voices
 
 
+def generar_voz_fish(texto, wav_path, llave, voice_id):
+    """Voz Fish Audio (API REST): una llamada con el guion entero, formato
+    wav. Sin control de velocidad: la duración es la natural de la voz."""
+    datos = json.dumps({"text": texto, "reference_id": voice_id,
+                        "format": "wav"}).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.fish.audio/v1/tts", data=datos, method="POST",
+        headers={"Authorization": "Bearer " + llave,
+                 "Content-Type": "application/json",
+                 "model": VOZ_FISH_MODELO})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            audio = r.read()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Fish Audio HTTP {e.code}: {e.read()[:200]!r}")
+    if len(audio) < 1000:
+        raise RuntimeError(f"Fish Audio devolvió audio vacío ({len(audio)} bytes)")
+    with open(wav_path, "wb") as f:
+        f.write(audio)
+    return duracion_audio(wav_path)
+
+
 def generar_voz(texto, wav_path, duracion_objetivo):
-    """Voz Kokoro Santa. Si la duración real se desvía más del 15% del
-    objetivo, un reintento con la velocidad ajustada (0,9–1,1)."""
+    """Voz Fish Audio (locutor k; Valentino de reserva) si hay llave
+    FISH_AUDIO_API_KEY; si no, o si Fish falla, Kokoro Santa.
+    Fish no tiene control de velocidad: la duración es la natural de la
+    voz y se acepta aunque se desvíe del objetivo."""
+    llave = os.environ.get("FISH_AUDIO_API_KEY", "").strip()
+    if llave:
+        for voice_id, nombre in ((VOZ_FISH_LOCUTOR_K, "fish:locutor-k"),
+                                 (VOZ_FISH_VALENTINO, "fish:valentino-biblica")):
+            try:
+                print(f"voz: Fish Audio {nombre} modelo={VOZ_FISH_MODELO}", flush=True)
+                dur = generar_voz_fish(texto, wav_path, llave, voice_id)
+                desv = abs(dur - duracion_objetivo) / duracion_objetivo
+                print(f"voz: Fish {nombre} duración {dur:.1f}s vs objetivo "
+                      f"{duracion_objetivo}s ({desv:.0%})", flush=True)
+                return nombre, "es", dur
+            except Exception as e:
+                print(f"voz Fish {nombre} falló: {e}", flush=True)
     from kokoro_onnx import Kokoro
 
     def _intento(speed):
