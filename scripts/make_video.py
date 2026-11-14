@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Veltora Studio — fase 2 (PROPUESTA, no desplegada aún).
+"""Veltora Studio — fase 2 (desplegada 13-nov-2026).
 Genera un video desde un tema cualquiera, sin adaptación manual por tema:
 investigación (Wikipedia ES + DuckDuckGo Lite) -> guion (Pollinations texto
 en llamadas cortas de ~50 palabras) -> imágenes (Pollinations sana) ->
@@ -11,6 +11,11 @@ Reglas heredadas y verificadas (13-nov-2026):
 - Pollinations texto anónimo: 1 llamada de ~110 palabras da HTTP 400
   output_token_limit_exceeded; llamadas cortas (~50 palabras) con
   instrucción CORTA funcionan; sin "no inventes" el modelo inventa datos.
+- Pollinations texto anónimo: límite por IP, 1 llamada a la vez y al menos
+  30 s entre llamadas; al pasarlo devuelve HTTP 402 con cabecera
+  Retry-After (fallo real 13-nov-2026, run #7: la 2ª llamada del guion
+  dio 402 tres veces seguidas). El script espera 35 s entre llamadas de
+  texto y respeta Retry-After ante 402/429 (hasta 6 reintentos).
 - Pollinations imágenes: sin marcas en el prompt (una marca lo bloquea);
   descargas con curl sin -C - (Pollinations no soporta rangos, rc 33).
 - Subtítulos .ass con PlayResX/Y del formato; .srt sin PlayRes escala la
@@ -105,23 +110,55 @@ class _Fase:
         return False
 
 
+def _retry_after_de_cabeceras(ruta_headers, defecto):
+    """Lee Retry-After de un archivo de cabeceras HTTP guardado por curl
+    (opción -D). Devuelve `defecto` si no hay cabecera o no se puede leer."""
+    try:
+        with open(ruta_headers, encoding="utf-8", errors="replace") as f:
+            for linea in f:
+                if linea.lower().startswith("retry-after:"):
+                    return float(linea.split(":", 1)[1].strip())
+    except (OSError, ValueError):
+        pass
+    return defecto
+
+
 def bajar_archivo(url, ruta):
     """Descarga binaria con curl: reintentos contra cortes de red.
     Sin -C - (resume): Pollinations no soporta rangos de bytes y curl
     falla con rc 33 cuando el archivo ya existe (verificado 13-nov-2026);
-    cada intento descarga desde cero y se borra el archivo previo."""
+    cada intento descarga desde cero y se borra el archivo previo.
+    Ante HTTP 402/429 de Pollinations (límite por IP), se respeta la
+    cabecera Retry-After antes de reintentar (fallo real 13-nov-2026);
+    sin espaciamiento proactivo entre imágenes, solo espera al fallar."""
     if os.path.exists(ruta):
         os.remove(ruta)
-    for i in range(3):
-        r = subprocess.run(
-            ["curl", "-fsSL", "--retry", "2", "--retry-all-errors",
-             "--retry-delay", "5", "-o", ruta, url],
-            capture_output=True, text=True,
-        )
+    es_pollinations = "pollinations.ai" in url
+    intentos = 4 if es_pollinations else 3
+    headers_path = ruta + ".headers"
+    espera_base = 45
+    for i in range(intentos):
+        if es_pollinations:
+            args = ["curl", "-fsSL", "-D", headers_path, "-o", ruta, url]
+        else:
+            args = ["curl", "-fsSL", "--retry", "2", "--retry-all-errors",
+                    "--retry-delay", "5", "-o", ruta, url]
+        r = subprocess.run(args, capture_output=True, text=True)
         if r.returncode == 0 and os.path.exists(ruta) and os.path.getsize(ruta) > 10000:
+            if os.path.exists(headers_path):
+                os.remove(headers_path)
             return os.path.getsize(ruta)
         print(f"curl intento {i}: rc={r.returncode} {r.stderr.strip()[-200:]}", flush=True)
-        time.sleep(5 * (i + 1))
+        if i < intentos - 1:
+            espera = 5 * (i + 1)
+            if es_pollinations and ("402" in r.stderr or "429" in r.stderr):
+                ra = _retry_after_de_cabeceras(headers_path, espera_base)
+                espera = ra + 5
+                espera_base = min(espera_base * 2, 180)
+                print(f"Pollinations imagen: límite 402/429, espero {espera:.0f} s (Retry-After)", flush=True)
+            time.sleep(espera)
+    if os.path.exists(headers_path):
+        os.remove(headers_path)
     raise RuntimeError(f"no se pudo bajar {url}")
 
 
@@ -143,6 +180,74 @@ def http_get(url, timeout=45, intentos=2, headers=None):
             ultimo = e
             print(f"http intento {i} falló: {e}", flush=True)
         time.sleep(5 * (i + 1))
+    raise ultimo
+
+
+# Límite de ritmo de Pollinations Classic API (texto anónimo): 1 llamada a
+# la vez, al menos 30 s entre llamadas; al pasarlo devuelve HTTP 402 con
+# cabecera Retry-After. El runner de Actions comparte IP con muchos
+# usuarios, así que el límite se alcanza fácil (fallo real 13-nov-2026,
+# run #7: la 2ª llamada del guion dio 402 tres veces seguidas con
+# reintentos a 8 s). Espaciamiento proactivo de 35 s entre llamadas.
+POLL_TEXT_MIN_GAP_S = 35
+_ultima_llamada_texto = 0.0
+
+
+def _espera_retry_after(headers, defecto):
+    """Segundos a esperar según la cabecera Retry-After (+5 s de margen).
+    `headers` es el mapping de cabeceras de la respuesta (o None)."""
+    espera = defecto
+    ra = None
+    try:
+        if headers is not None:
+            ra = headers.get("Retry-After")
+            if ra is None:
+                # dict plano (no HTTPMessage): la clave puede venir en minúscula
+                ra = headers.get("retry-after")
+        if ra is not None:
+            espera = float(ra)
+    except (TypeError, ValueError):
+        pass
+    return max(0.0, espera) + 5
+
+
+def pollinations_texto(url, timeout=40, max_intentos=6):
+    """GET a text.pollinations.ai con límite de ritmo: al menos 35 s desde
+    la llamada de texto anterior, y ante HTTP 402/429 se respeta la
+    cabecera Retry-After con reintentos de espera creciente. Otros 4xx
+    (p. ej. 400 output_token_limit_exceeded) no se reintentan: los
+    gestiona el mecanismo de variantes de generar_guion."""
+    global _ultima_llamada_texto
+    ahora = time.time()
+    espera = POLL_TEXT_MIN_GAP_S - (ahora - _ultima_llamada_texto)
+    if espera > 0:
+        print(f"Pollinations texto: espero {espera:.0f} s desde la llamada "
+              f"anterior (límite 30 s entre llamadas)", flush=True)
+        time.sleep(espera)
+    ultimo = None
+    espera_base = 30
+    for i in range(max_intentos):
+        try:
+            req = urllib.request.Request(
+                url, headers={**UA, "Connection": "close"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                _ultima_llamada_texto = time.time()
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            _ultima_llamada_texto = time.time()
+            if e.code in (402, 429) and i < max_intentos - 1:
+                espera = _espera_retry_after(e.headers, espera_base)
+                espera_base = min(espera_base * 2, 120)
+                print(f"Pollinations texto: HTTP {e.code}, reintento "
+                      f"{i + 1}/{max_intentos} en {espera:.0f} s", flush=True)
+                time.sleep(espera)
+                continue
+            raise
+        except Exception as e:
+            ultimo = e
+            print(f"Pollinations texto intento {i} falló: {e}", flush=True)
+            if i < max_intentos - 1:
+                time.sleep(5 * (i + 1))
     raise ultimo
 
 
@@ -481,10 +586,11 @@ def _llamada_guion(prompt, n_parrafos, palabras_min, palabras_max, claves):
     """Una llamada a Pollinations texto. Devuelve (parrafos, palabras) o None."""
     url = "https://text.pollinations.ai/" + urllib.parse.quote(prompt)
     try:
-        # Un solo intento por variante (timeout 40 s): las 3 variantes ya
-        # son los reintentos. Con intentos=2 cada variante costaba ~90 s
-        # cuando el servidor se quedaba colgado (verificado 13-nov-2026).
-        status, body = http_get(url, timeout=40, intentos=1)
+        # pollinations_texto ya gestiona el límite de ritmo: 35 s entre
+        # llamadas y reintentos con Retry-After ante 402/429 (hasta 6).
+        # Un 400 (output_token_limit_exceeded) no se reintenta aquí: lo
+        # gestionan las 3 variantes de generar_guion (cada una más corta).
+        status, body = pollinations_texto(url, timeout=40)
     except Exception as e:
         print(f"Pollinations texto falló: {e}", flush=True)
         return None
