@@ -100,10 +100,12 @@ jobs:
       - name: Generar video
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          FISH_AUDIO_API_KEY: ${{ secrets.FISH_AUDIO_API_KEY }}
         run: python scripts/make_video.py --tema "${{ inputs.tema }}" --duracion "${{ inputs.duracion }}" --formato "${{ inputs.formato }}" --musica "${{ inputs.musica }}" --modo "${{ inputs.modo }}" --video-url "${{ inputs.video_url }}" --variante "${{ inputs.variante }}" --tema-nuevo "${{ inputs.tema_nuevo }}" --transcripcion-pegada "${{ inputs.transcripcion_pegada }}"
 
       - name: Verificar MP4
         run: |
+        
           ffprobe -v error -show_entries format=duration,size \
             -show_entries stream=codec_type,codec_name,width,height \
             -of default=noprint_wrappers=1 out/video.mp4
