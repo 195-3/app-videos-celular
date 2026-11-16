@@ -1511,11 +1511,12 @@ def renderizar(imagenes, duraciones, wav_path, srt_path, salida, ancho_px, alto_
             "ffmpeg", "-y", "-i", img, "-vf",
             f"scale={ancho_px}:{alto_px}:force_original_aspect_ratio=increase,"
             f"crop={ancho_px}:{alto_px},"
-            # Imágenes ESTÁTICAS (decisión del usuario 16-nov-2026): sin zoom.
-            # El zoom lento hacía que las imágenes se sintieran raras y
-            # remarcaba los defectos del dial. zoompan con z=1 genera los
-            # frames idénticos, sin movimiento.
-            f"zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            # Movimiento VISIBLE (decisión del usuario 16-nov-2026): las
+            # imágenes se veían estáticas y eso es lo que hay que arreglar.
+            # Zoom de 1.0 a 1.35 en cada clip, que se note. (El 16-nov yo
+            # entendí al revés y desplegué z=1 estático, commit 34f1800;
+            # esto lo revierte.)
+            f"zoompan=z='1+0.35*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
             f"d={frames}:s={ancho_px}x{alto_px}:fps=30,"
             # Realce fijo (16-nov-2026): los videos salían apagados.
             # Contraste y saturación en cada clip, con las mismas
