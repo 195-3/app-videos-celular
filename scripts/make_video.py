@@ -99,17 +99,18 @@ STOPWORDS = {
 # bloquea en Pollinations, verificado 13-nov-2026). 5 clips para <=45 s,
 # 7 clips para 60 s.
 PROMPTS_IMAGEN = [
-    # Todas de relojes, todas con luz clara. La lista anterior tenía una
-    # de carros de carrera al atardecer y casi todas pedían fondo oscuro:
-    # el video curado #16 (14-nov-2026) salió con carros mientras la voz
-    # hablaba de relojes y con todas las escenas oscuras (brillo 59-88).
-    "Macro close-up of a luxury mechanical chronograph wristwatch dial, bright studio lighting, light grey background, photorealistic",
-    "Luxury gold wristwatch with black leather strap on a white marble surface, bright daylight, photorealistic",
-    "Elegant silver dress watch clearly visible on a man's wrist, light blue shirt cuff, close-up on the watch, bright daylight, photorealistic",
-    "Row of colorful luxury wristwatches displayed on a bright white showroom shelf, white background, bright even lighting, photorealistic",
-    "Close-up of a vintage chronograph subdial with patina, bright studio photography, light background, photorealistic",
-    "Tiny watch movement gears and balance wheel, macro photography, gold and steel components, bright lighting, photorealistic",
-    "Luxury wristwatch collection in an open light wooden display box, bright warm daylight, photorealistic",
+    # Todas de relojes, todas con fondo azul tinta (#0E1B2E, color de la
+    # marca) y mucho contraste. La lista anterior pedía fondo gris claro
+    # y luz suave: los videos salían apagados, sin ganas de mirar
+    # (crítica del usuario 16-nov-2026). Tampoco hay primeros planos de
+    # dial: ahí es donde el generador inventa letras y números.
+    "Overhead top-down flat lay photo of a single gold wristwatch lying flat on dark navy blue velvet fabric, watch fills the frame, object only, dramatic lighting, vivid colors, high contrast, photorealistic",
+    "Luxury gold wristwatch with black leather strap on a dark ink-blue surface, dramatic spotlight, vivid colors, high contrast, photorealistic",
+    "Elegant silver dress watch clearly visible on a man's wrist, light blue shirt cuff, deep navy blue background, dramatic lighting, vivid, high contrast, photorealistic",
+    "Row of colorful luxury wristwatches displayed on a dark navy showroom shelf, dramatic spot lighting, vivid colors, high contrast, photorealistic",
+    "Vintage gold pocket watch with chain on dark blue velvet, dramatic warm lighting, rich gold tones, vivid, high contrast, photorealistic",
+    "Tiny watch movement gears and balance wheel, macro photography, gold and steel components, dark navy background, dramatic lighting, vivid, high contrast, photorealistic",
+    "Luxury wristwatch collection in an open dark wooden display box, deep navy interior, dramatic warm lighting, vivid colors, high contrast, photorealistic",
 ]
 
 
@@ -1510,8 +1511,12 @@ def renderizar(imagenes, duraciones, wav_path, srt_path, salida, ancho_px, alto_
             "ffmpeg", "-y", "-i", img, "-vf",
             f"scale={ancho_px}:{alto_px}:force_original_aspect_ratio=increase,"
             f"crop={ancho_px}:{alto_px},"
-            f"zoompan=z='1+0.12*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"d={frames}:s={ancho_px}x{alto_px}:fps=30,format=yuv420p",
+            f"zoompan=z='1+0.18*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={frames}:s={ancho_px}x{alto_px}:fps=30,"
+            # Realce fijo (16-nov-2026): los videos salían apagados.
+            # Contraste y saturación en cada clip, con las mismas
+            # herramientas gratis, sin cambiar de generador.
+            f"eq=contrast=1.12:saturation=1.25:brightness=0.01,format=yuv420p",
             "-frames:v", str(frames), "-c:v", "libx264", "-pix_fmt", "yuv420p",
             "-r", "30", seg,
         ])
