@@ -440,7 +440,7 @@ def _numeros(texto):
     return {_norm_num(n) for n in re.findall(r"\b\d{4}\b|\b\d[\d.,]{2,}\b", texto)}
 
 
-def _wiki_candidato(lang, tema, claves, max_hits=3):
+def _wiki_candidato(lang, tema, claves, max_hits=5):
     """Busca el artículo de Wikipedia (idioma `lang`) que de verdad trata
     del tema. Prueba hasta `max_hits` resultados en orden.
     PUERTA DE RELEVANCIA (fallo real 13-nov-2026, Nautilus): la búsqueda
@@ -455,7 +455,10 @@ def _wiki_candidato(lang, tema, claves, max_hits=3):
     hay distintivas porque el título cubre todo el tema), más 1 por cada
     palabra del tema en el título. Sirve para preferir el artículo
     dedicado ("Patek Philippe Nautilus") sobre uno tangencial (el
-    diseñador "Gérald Genta"). Sin candidato válido: (0, None, [], [])."""
+    diseñador "Gérald Genta"). PUERTA DE TÍTULO (fallo real 16-nov-2026,
+    Ebel): además, el título del artículo debe compartir al menos una
+    palabra del tema; si no, se descarta aunque sus frases mencionen el
+    tema. Sin candidato válido: (0, None, [], [])."""
     base = f"https://{lang}.wikipedia.org/w/api.php"
     try:
         q = urllib.parse.quote(tema)
@@ -473,6 +476,21 @@ def _wiki_candidato(lang, tema, claves, max_hits=3):
         # Palabra distintiva: del tema pero no del título del artículo
         # (p. ej. "paul" en "Rolex Daytona Paul Newman" -> artículo "Rolex Daytona").
         titulo_bajo = titulo.lower()
+        # PUERTA DE TÍTULO (fallo real 16-nov-2026, Ebel): la búsqueda de
+        # "El reloj de pulsera nació para mujeres" devolvió el artículo
+        # de la MARCA "Ebel" (menciona relojes de pulsera y el reloj de
+        # Elvis) y la puerta de mención lo dejó pasar con 0 puntos,
+        # porque solo exige que alguna frase mencione el tema. Un
+        # artículo solo vale si su TÍTULO comparte al menos una palabra
+        # del tema: "Reloj de pulsera" comparte "reloj" y "pulsera";
+        # "Ebel" no comparte ninguna. Sin esto, el guion se escribe con
+        # los datos del artículo equivocado y no se puede corregir
+        # después, porque el control anti-invención obliga al modelo a
+        # usar solo esos datos.
+        if not any(k in titulo_bajo for k in claves):
+            print(f"investigación: Wikipedia {lang} '{titulo}' descartado: "
+                  f"el título no comparte ninguna palabra del tema {claves}", flush=True)
+            continue
         distintivas = [k for k in claves if k not in titulo_bajo]
         try:
             status, body = http_get(
