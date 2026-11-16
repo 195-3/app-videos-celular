@@ -1,109 +1,87 @@
 {
   "fases": {
-    "curar-fuente": {
-      "segundos": 6.5
-    },
-    "curar-analisis": {
-      "segundos": 87.5
+    "investigacion": {
+      "segundos": 1.4
     },
     "guion": {
-      "segundos": 286.7
+      "segundos": 338.3
     },
     "imagenes": {
-      "segundos": 3.7
+      "segundos": 209.0
     },
     "voz": {
-      "segundos": 25.5
+      "segundos": 16.5
     },
     "musica": {
       "segundos": 0.1
     },
     "render": {
-      "segundos": 45.6
+      "segundos": 20.6
     }
   },
   "exito": true,
   "version": "fase2",
-  "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
-  "modo": "curar",
-  "duracion_objetivo_s": 60.0,
-  "formato": "horizontal",
-  "dimensiones": "1920x1080",
-  "clips_previstos": 7,
-  "palabras_objetivo": 132,
+  "tema": "El reloj de pulsera nació para mujeres",
+  "modo": "tema",
+  "duracion_objetivo_s": 45.0,
+  "formato": "vertical",
+  "dimensiones": "720x1280",
+  "clips_previstos": 5,
+  "palabras_objetivo": 99,
   "musica_pedida": "si",
-  "variante": "mismo-tema",
-  "curar": {
-    "video_id": "lxZFE68mu8k",
-    "titulo": "Top 10 Relojes Increíbles Que Querrás Tener Ya - FULL TOPS",
-    "autor": "FULL TOP'S",
-    "vistas": null,
-    "transcripcion_chars": 3999,
-    "descripcion_chars": 0,
-    "gancho": "número 10 lote m 05 la ferrari diseñado en conjunto",
-    "estructura": "datos y historia del reloj",
-    "cierre": "número 10 lote m 05 la ferrari diseñado en conjunto",
-    "cambio": "mismo tema con otros ejemplos",
-    "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
-    "fuente": "reglas",
-    "candidatos_tema": [
-      "Top 10 Increíbles Querrás Tener Ya TOPS"
-    ],
-    "chips_transcripcion": 4
-  },
   "investigacion": {
-    "tema": "Top 10 Increíbles Querrás Tener Ya TOPS",
-    "fuente_datos": "transcripcion",
-    "datos": "número 10 lote m 05 la ferrari diseñado en conjunto por ferrari y la empresa de relojes hublot su diseño recuerda a otros de esta casa sin embargo, más precisos del mundo con una variación de más o menos 15 segundos al mes es el único reloj totalmente solar que además posee un si",
+    "tema": "El reloj de pulsera nació para mujeres",
+    "articulo_wiki": "Ebel",
+    "frases_wiki": 12,
+    "resultados_ddg": 10,
+    "numeros_confirmados": [],
+    "fuente_datos": "wikipedia-es",
+    "datos": "En 2019, se vendió por casi medio millón de dólares un reloj de pulsera de oro y diamantes fabricado en 1974 y regalado por el cantante Elvis Presley, elaborado en oro de 18 kt y con 26 diamantes blancos redondos que enmarcan la esfera del reloj, Pierre-Alain, la firma",
     "chips": [
-      "número 10 lote m 05 la ferrari diseñado en conjunto por ferrari y la empresa de relojes hublot su diseño recuerda a otros de esta casa sin embargo",
-      "más precisos del mundo con una variación de más o menos 15 segundos al mes es el único reloj totalmente solar que además posee un sistema de posicionamiento",
-      "samsung para ser un gadget de su línea galaxy este reloj cuenta con una pantalla totalmente a color y táctil de 16 pulgadas el dispositivo además de dar",
-      "6 fósforo y aunque lo parezca este no es otro de los tantos relojes inteligentes que saturan hoy en día el mercado su diseño está basado en tecnología"
-    ],
-    "numeros_confirmados": []
+      "En 2019, se vendió por casi medio millón de dólares un reloj de pulsera de oro y diamantes fabricado en 1974 y regalado por el cantante Elvis Presley",
+      "elaborado en oro de 18 kt y con 26 diamantes blancos redondos que enmarcan la esfera del reloj",
+      "Pierre-Alain, la firma experimentó un repunte significativo desde principios de la década de 1970 y produjo relojes de pulsera para Cartier",
+      "a principios de los años 1990"
+    ]
   },
   "guion_llamadas": [
-    43,
-    44,
-    39
+    40,
+    37
   ],
   "guion_fuente": "pollinations",
-  "guion_palabras": 134,
-  "guion_clips": 7,
-  "imagenes_ok": 7,
+  "guion_palabras": 85,
+  "guion_clips": 5,
+  "imagenes_ok": 5,
   "voz_modelo": "fish:locutor-k",
   "voz_lang": "es",
-  "voz_duracion_s": 51.39,
+  "voz_duracion_s": 35.98,
   "musica": {
     "titulo": "Lovely Piano Song",
     "autor": "Kevin MacLeod",
     "licencia": "CC0 1.0 Universal (dominio público)",
     "volumen": 0.2,
-    "duracion_s": 51.39
+    "duracion_s": 35.98
   },
   "clip_duraciones_s": [
-    4.7,
-    5.93,
-    6.39,
-    7.3,
-    9.46,
-    12.2,
-    5.41
+    5.38,
+    5.38,
+    5.31,
+    8.5,
+    11.41
   ],
   "video": {
-    "duracion_s": 51.39,
-    "mb": 8.11,
-    "width": 1920,
-    "height": 1080,
+    "duracion_s": 35.93,
+    "mb": 3.16,
+    "width": 720,
+    "height": 1280,
     "video_codec": "h264",
     "tiene_audio": true,
     "audio_codec": "aac"
   },
-  "tiempo_total_s": 455.5,
+  "tiempo_total_s": 585.8,
   "workflow": {
-    "run_id": "43628586739",
-    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43628586739",
-    "tiempo_wall_s": 499.1
+    "run_id": "43952791402",
+    "run_url": "https://github.com/195-3/app-videos-celular/actions/runs/43952791402",
+    "tiempo_wall_s": 632.0
   }
 }
